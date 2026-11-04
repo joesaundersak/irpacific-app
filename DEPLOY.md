@@ -48,8 +48,8 @@ The app sends through `smtp.office365.com` port 587 (STARTTLS, TLS 1.2+), logged
 1. **Enable Authenticated SMTP on the mailbox**: Microsoft 365 admin center -> Users -> Active users -> select the
    sender mailbox (info@irpnw.com) -> Mail -> Manage email apps -> check **Authenticated SMTP** -> Save. (If Security Defaults are on in
    Microsoft Entra ID, SMTP AUTH is blocked tenant-wide until they are turned off or replaced with Conditional Access.)
-2. If the mailbox uses MFA, password login over SMTP will be rejected; use a dedicated, licensed mailbox without MFA
-   (e.g. operations@irpacific.com) for sending.
+2. If info@irpnw.com uses MFA, password login over SMTP will be rejected; turn MFA off for that mailbox (or use another
+   licensed mailbox without MFA and update `SMTP_USER`/`SMTP_FROM`).
 3. **Ask DigitalOcean to unblock outbound SMTP**: DigitalOcean blocks ports 25/465/587 by default. Open a ticket at
    cloud.digitalocean.com/support -> "Networking" and ask them to allow outbound SMTP on port 587 for your account
    so the app `irpacific-app` can send through your own Office 365 tenant (smtp.office365.com). Until they do,
@@ -60,6 +60,16 @@ The app sends through `smtp.office365.com` port 587 (STARTTLS, TLS 1.2+), logged
 1. Open https://app.irpacific.com and sign in as joe@irpacific.com with `SEED_USER_PASSWORD`.
 2. Imports -> upload the BuilderTrend exports in this order: Jobsites, WIP, Schedule, Leads (expanded).
 3. Share the URL and initial password with Matt, Trisha and Michele.
+
+## Resetting a password
+The seed never changes existing accounts, so re-running it will not fix a password. Instead: DigitalOcean -> your app
+-> **Console** tab -> component `web`, then run one of:
+```bash
+npm run users:reset-password -- joe@irpacific.com 'NewPassword123!'   # one user
+npm run users:reset-password -- all 'NewPassword123!'                 # all users
+```
+It prints "Password updated for N user(s)." If it says no user was found, it lists the accounts that exist; if there
+are none, run `npm run db:seed` in the same console first.
 
 ## Updating the app
 Each update arrives as a new zip. Unzip it over your local `irpacific-app` folder (keep the `.git` folder), then:
