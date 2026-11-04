@@ -1,0 +1,160 @@
+export const dynamic = 'force-dynamic'
+import { NextResponse } from 'next/server'
+import { auth } from '@/auth'
+import { prisma } from '@/lib/db'
+
+export async function GET() {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const meetings = await prisma.meeting.findMany({
+      orderBy: { meetingDate: 'desc' },
+      include: {
+        createdBy: { select: { name: true } },
+        _count: { select: { actionItems: true } },
+      },
+    })
+
+    return NextResponse.json({
+      meetings: meetings.map((m: any) => ({
+        ...m,
+        meetingDate: m.meetingDate?.toISOString(),
+        createdAt: m.createdAt?.toISOString(),
+        updatedAt: m.updatedAt?.toISOString(),
+      })),
+    })
+  } catch (error: any) {
+    console.error('Meetings error:', error)
+    return NextResponse.json({ error: 'Failed to load meetings' }, { status: 500 })
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const body = await request.json()
+    const { title, meetingDate, meetingType, notes } = body ?? {}
+
+    const meeting = await prisma.meeting.create({
+      data: {
+        title: title ?? 'Weekly Meeting',
+        meetingDate: meetingDate ? new Date(meetingDate) : new Date(),
+        meetingType: meetingType ?? 'weekly',
+        notes: notes ?? null,
+        createdById: session.user.id,
+      },
+    })
+
+    // Auto-carry incomplete action items from the last meeting
+    const lastMeeting = await prisma.meeting.findFirst({
+      where: { id: { not: meeting.id } },
+      orderBy: { meetingDate: 'desc' },
+    })
+    if (lastMeeting) {
+      const carryover = await prisma.actionItem.findMany({
+        where: { meetingId: lastMeeting.id, status: { not: 'complete' } },
+      })
+      for (const item of carryover) {
+        await prisma.actionItem.update({
+          where: { id: item.id },
+          data: { meetingId: meeting.id },
+        })
+      }
+    }
+
+    // Auto-generate action items from system alerts
+    await generateAutoActionItems(meeting.id)
+
+    return NextResponse.json({ id: meeting.id })
+  } catch (error: any) {
+    console.error('Create meeting error:', error)
+    return NextResponse.json({ error: 'Failed to create meeting' }, { status: 500 })
+  }
+}
+
+async function generateAutoActionItems(meetingId: string) {
+  const staleDaysConfig = await prisma.systemConfig.findUnique({ where: { key: 'stale_lead_days' } })
+  const staleDays = parseInt(staleDaysConfig?.value ?? '30', 10)
+  const targetMarginConfig = await prisma.systemConfig.findUnique({ where: { key: 'target_margin' } })
+  const targetMargin = parseFloat(targetMarginConfig?.value ?? '25')
+
+  // 1. Stale leads
+  const staleLeads = await prisma.lead.findMany({
+    where: { isStale: true, leadStatus: { not: 'Closed' } },
+    include: { salesperson: true },
+  })
+  for (const lead of staleLeads) {
+    const desc = `Follow up on stale lead: ${lead.opportunityTitle} (no activity > ${staleDays} days)`
+    const existing = await prisma.actionItem.findFirst({ where: { description: desc, status: 'open', meetingId } })
+    if (!existing) {
+      await prisma.actionItem.create({
+        data: {
+          description: desc,
+          assignedToId: lead.salespersonId,
+          category: 'stale_lead',
+          source: 'auto',
+          meetingId,
+          leadId: lead.id,
+          priority: 'medium',
+        },
+      })
+    }
+  }
+
+  // 2. Margin alerts
+  const atRiskJobs = await prisma.job.findMany({
+    where: { status: 'OPEN' },
+    include: { projectManager: true },
+  })
+  for (const job of atRiskJobs) {
+    const margin = job.totalRevisedPrice > 0
+      ? ((job.totalRevisedPrice - job.actualCosts) / job.totalRevisedPrice) * 100
+      : job.projectedProfitPct
+    if (margin < targetMargin && job.actualCosts > 0) {
+      const desc = `Review at-risk margin on ${job.jobCode}: ${margin.toFixed(1)}% (target: ${targetMargin}%)`
+      const existing = await prisma.actionItem.findFirst({ where: { description: { startsWith: `Review at-risk margin on ${job.jobCode}` }, status: 'open', meetingId } })
+      if (!existing) {
+        await prisma.actionItem.create({
+          data: {
+            description: desc,
+            assignedToId: job.projectManagerId,
+            category: 'margin_alert',
+            source: 'auto',
+            meetingId,
+            jobId: job.id,
+            priority: 'high',
+          },
+        })
+      }
+    }
+  }
+
+  // 3. Overdue milestones
+  const overdue = await prisma.milestone.findMany({
+    where: {
+      isComplete: false,
+      endDate: { lt: new Date() },
+    },
+    include: { job: { include: { projectManager: true } } },
+  })
+  for (const ms of overdue) {
+    const desc = `Overdue milestone: ${ms.title} on ${ms.job?.jobCode ?? 'Unknown'}`
+    const existing = await prisma.actionItem.findFirst({ where: { description: desc, status: 'open', meetingId } })
+    if (!existing) {
+      await prisma.actionItem.create({
+        data: {
+          description: desc,
+          assignedToId: ms.job?.projectManagerId,
+          category: 'overdue_milestone',
+          source: 'auto',
+          meetingId,
+          jobId: ms.job?.id,
+          priority: 'high',
+        },
+      })
+    }
+  }
+}

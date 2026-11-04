@@ -1,0 +1,110 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { PageHeader } from '@/components/layouts/page-header'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Users, Plus, ArrowRight, Calendar } from 'lucide-react'
+import { formatDate } from '@/lib/format'
+import { FadeIn, Stagger, StaggerItem } from '@/components/ui/animate'
+import { toast } from 'sonner'
+
+export function MeetingsClient() {
+  const [meetings, setMeetings] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showCreate, setShowCreate] = useState(false)
+  const [newTitle, setNewTitle] = useState('Weekly Meeting')
+  const [newDate, setNewDate] = useState('')
+
+  const loadMeetings = () => {
+    fetch('/api/meetings')
+      .then(r => r.json())
+      .then(d => setMeetings(d.meetings ?? []))
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => { loadMeetings() }, [])
+
+  const createMeeting = async () => {
+    try {
+      const res = await fetch('/api/meetings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle, meetingDate: newDate || new Date().toISOString() }),
+      })
+      if (res.ok) {
+        toast.success('Meeting created with auto-generated action items')
+        setShowCreate(false)
+        loadMeetings()
+      } else toast.error('Failed to create meeting')
+    } catch { toast.error('Error creating meeting') }
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Team Meetings"
+        description="Weekly meeting hub with action items and accountability tracking"
+        actions={
+          <Dialog open={showCreate} onOpenChange={setShowCreate}>
+            <DialogTrigger asChild>
+              <Button><Plus className="h-4 w-4 mr-2" />New Meeting</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Create Meeting</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <div><Label>Title</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} /></div>
+                <div><Label>Date</Label><Input type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} /></div>
+                <Button onClick={createMeeting} className="w-full">Create & Generate Action Items</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      <FadeIn>
+        <Stagger className="space-y-3">
+          {loading ? (
+            <Card className="animate-pulse"><CardContent className="p-6"><div className="h-12 bg-muted rounded" /></CardContent></Card>
+          ) : meetings.length === 0 ? (
+            <Card><CardContent className="p-8 text-center text-muted-foreground">
+              <Users className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
+              <p>No meetings yet. Create your first weekly meeting to get started.</p>
+            </CardContent></Card>
+          ) : (
+            meetings.map((m: any) => (
+              <StaggerItem key={m.id}>
+                <Link href={`/meetings/${m.id}`}>
+                  <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                          <Calendar className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{m.title}</p>
+                          <p className="text-xs text-muted-foreground">{formatDate(m.meetingDate)} • {m._count?.actionItems ?? 0} action items</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {m.summarySent && <Badge variant="outline" className="text-xs text-green-600">Summary Sent</Badge>}
+                        <Badge variant="secondary" className="text-xs">{m.status}</Badge>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </StaggerItem>
+            ))
+          )}
+        </Stagger>
+      </FadeIn>
+    </div>
+  )
+}

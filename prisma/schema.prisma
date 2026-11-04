@@ -1,0 +1,293 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  passwordHash   String
+  roleId         String
+  role           Role     @relation(fields: [roleId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assignedJobs   Job[]    @relation("ProjectManager")
+  assignedLeads  Lead[]   @relation("Salesperson")
+  actionItems    ActionItem[] @relation("AssignedTo")
+  createdActionItems ActionItem[] @relation("CreatedBy")
+  importHistory  ImportHistory[]
+  createdMeetings Meeting[] @relation("MeetingCreator")
+
+  @@index([roleId])
+  @@index([email])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  permissions Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+}
+
+model Job {
+  id                String    @id @default(cuid())
+  jobCode           String    @unique
+  jobName           String
+  state             String?
+  city              String?
+  streetAddress     String?
+  zip               String?
+  status            String    @default("OPEN")
+  jobType           String?
+  groups            String?
+  contractType      String?
+  prefix            String?
+
+  // Client info
+  clientName        String?
+  clientEmail       String?
+  clientPhone       String?
+  clientCity        String?
+  clientState       String?
+  clientStreet      String?
+  clientZip         String?
+
+  // Financial - from Jobsites
+  contractPrice     Float     @default(0)
+  approvedCOPrice   Float     @default(0)
+  revisedPrice      Float     @default(0)
+  totalRevisedPrice Float     @default(0)
+  amountInvoiced    Float     @default(0)
+  paymentsReceived  Float     @default(0)
+  clientBalance     Float     @default(0)
+  costsPaid         Float     @default(0)
+  costsOutstanding  Float     @default(0)
+  totalCosts        Float     @default(0)
+  grossProfit       Float     @default(0)
+  originalBudget    Float     @default(0)
+  revisedBudget     Float     @default(0)
+
+  // Financial - from WIP
+  projectedCosts    Float     @default(0)
+  actualCosts       Float     @default(0)
+  percentComplete   Float     @default(0)
+  projectedProfit   Float     @default(0)
+  projectedProfitPct Float    @default(0)
+  earnedRevenue     Float     @default(0)
+  overUnderBilling  Float     @default(0)
+  overUnderBillingPct Float   @default(0)
+  profitEarned      Float     @default(0)
+
+  // Dates
+  actualStart       DateTime?
+  actualCompletion  DateTime?
+  projectedStart    DateTime?
+  projectedCompletion DateTime?
+  createdDate       DateTime?
+
+  // Relations
+  projectManagerId  String?
+  projectManager    User?     @relation("ProjectManager", fields: [projectManagerId], references: [id])
+  milestones        Milestone[]
+  apEntries         APEntry[]
+  actionItems       ActionItem[]
+  leadLinks         Lead[]    @relation("LinkedJob")
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([projectManagerId])
+  @@index([state])
+  @@index([status])
+  @@index([jobCode])
+}
+
+model Lead {
+  id                String    @id @default(cuid())
+  opportunityTitle  String
+  clientContact     String?
+  firstName         String?
+  lastName          String?
+  email             String?
+  phone             String?
+  cellPhone         String?
+  cityContact       String?
+  stateContact      String?
+  streetContact     String?
+  zipContact        String?
+  cityOpp           String?
+  stateOpp          String?
+  streetOpp         String?
+  zipOpp            String?
+
+  confidence        Float     @default(0)
+  estimatedRevMin   Float     @default(0)
+  estimatedRevMax   Float     @default(0)
+  estimatedRevenue  String?
+  weightedValue     Float     @default(0)
+
+  leadStatus        String    @default("Open")
+  proposalStatus    String?
+  hasBeenContacted  String?
+  projectType       String?
+  source            String?
+  notes             String?
+  tags              String?
+
+  createdDate       DateTime?
+  lastContacted     DateTime?
+  soldDate          DateTime?
+  projectedSalesDate DateTime?
+  projectStart      DateTime?
+  substantialCompletion DateTime?
+  age               String?
+
+  // Stale tracking
+  lastActivityDate  DateTime?
+  isStale           Boolean   @default(false)
+
+  // Relations
+  salespersonId     String?
+  salesperson       User?     @relation("Salesperson", fields: [salespersonId], references: [id])
+  linkedJobId       String?
+  linkedJob         Job?      @relation("LinkedJob", fields: [linkedJobId], references: [id])
+  actionItems       ActionItem[] @relation("LeadActionItems")
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([salespersonId])
+  @@index([linkedJobId])
+  @@index([isStale])
+  @@index([leadStatus])
+}
+
+model Milestone {
+  id          String    @id @default(cuid())
+  jobId       String
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  phase       String
+  title       String
+  startDate   DateTime?
+  endDate     DateTime?
+  isComplete  Boolean   @default(false)
+  percentComplete Int   @default(0)
+  notes       String?
+  duration    Int?      @default(0)
+  assignedTo  String?
+  isRequired  Boolean   @default(false)
+  source      String    @default("import")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([jobId])
+  @@index([phase])
+  @@index([endDate])
+}
+
+model APEntry {
+  id          String    @id @default(cuid())
+  jobId       String
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  vendorName  String?
+  amount      Float     @default(0)
+  dueDate     DateTime?
+  isPaid      Boolean   @default(false)
+  title       String?
+  notes       String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([jobId])
+  @@index([dueDate])
+  @@index([isPaid])
+}
+
+model ActionItem {
+  id          String    @id @default(cuid())
+  description String
+  assignedToId String?
+  assignedTo  User?     @relation("AssignedTo", fields: [assignedToId], references: [id])
+  createdById String?
+  createdBy   User?     @relation("CreatedBy", fields: [createdById], references: [id])
+  dueDate     DateTime?
+  priority    String    @default("medium")
+  status      String    @default("open")
+  category    String    @default("manual")
+  source      String?
+  jobId       String?
+  job         Job?      @relation(fields: [jobId], references: [id])
+  leadId      String?
+  lead        Lead?     @relation("LeadActionItems", fields: [leadId], references: [id])
+  meetingId   String?
+  meeting     Meeting?  @relation(fields: [meetingId], references: [id])
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([meetingId])
+  @@index([jobId])
+  @@index([leadId])
+  @@index([category])
+}
+
+model Meeting {
+  id          String    @id @default(cuid())
+  title       String
+  meetingDate DateTime
+  meetingType String    @default("weekly")
+  notes       String?
+  status      String    @default("scheduled")
+  createdById String?
+  createdBy   User?     @relation("MeetingCreator", fields: [createdById], references: [id])
+  actionItems ActionItem[]
+  summarySent Boolean   @default(false)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([meetingDate])
+  @@index([createdById])
+}
+
+model ImportHistory {
+  id            String   @id @default(cuid())
+  fileName      String
+  fileType      String
+  recordsProcessed Int   @default(0)
+  recordsAdded  Int      @default(0)
+  recordsUpdated Int     @default(0)
+  recordsUnchanged Int   @default(0)
+  importedById  String?
+  importedBy    User?    @relation(fields: [importedById], references: [id])
+  cloudStoragePath String?
+  isPublic      Boolean  @default(false)
+  warnings      String?
+  status        String   @default("completed")
+
+  createdAt     DateTime @default(now())
+
+  @@index([importedById])
+  @@index([fileType])
+  @@index([createdAt])
+}
+
+model SystemConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+
+  @@index([key])
+}
