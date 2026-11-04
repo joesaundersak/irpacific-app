@@ -11,7 +11,8 @@
    git remote add origin https://github.com/joesaundersak/irpacific-app.git
    git push -u origin main
    ```
-   (No git? Use GitHub's "uploading an existing file" link and drag in the unzipped folder contents. Include the hidden `.do` folder.)
+   Use git from the command line (above) so hidden files such as `.do/` and `.gitignore` are included; Finder and
+   GitHub's web upload often skip them.
 
 ## 2. Connect GitHub to DigitalOcean
 cloud.digitalocean.com -> Apps -> Create App -> GitHub -> "Edit your GitHub permissions" -> install the DigitalOcean app
@@ -28,8 +29,9 @@ Wait until it shows "Online" (a few minutes).
 3. Replace every `CHANGE_ME` value under Environment Variables (they are encrypted there):
    - `AUTH_SECRET` and `NEXTAUTH_SECRET`: the same random value (`openssl rand -base64 32`).
    - `SEED_USER_PASSWORD` (on the db-migrate job): initial password for the 4 team accounts.
-   - `RESEND_API_KEY`: see step 6 (or leave `CHANGE_ME` for now; emails will just fail until set).
-   - `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`: only needed if you will not use Resend.
+   - `SMTP_USER`: `info@irpnw.com` (the Office 365 mailbox that sends the emails; pre-filled in the spec).
+   - `SMTP_PASSWORD`: the password for info@irpnw.com.
+   - `SMTP_FROM`: `info@irpnw.com` (pre-filled; keep it equal to `SMTP_USER`).
 4. Create the app. The first deploy runs the `db-migrate` job (creates tables, roles, the 4 users, settings) and then
    starts the web service. Check Activity -> Deploy logs if anything fails.
 5. In Databases -> irpacific-db -> Settings -> Trusted Sources, make sure the app `irpacific-app` is listed.
@@ -41,12 +43,18 @@ Wait until it shows "Online" (a few minutes).
    records alone.
 3. Wait for the domain to show "Active" (SSL certificate is issued automatically, usually under 30 minutes).
 
-## 6. Email (meeting summaries)
-DigitalOcean blocks outbound SMTP ports (25/465/587), so Office 365 SMTP will most likely not work from App Platform.
-Recommended: resend.com (free tier 3,000 emails/month)
-1. Sign up -> Domains -> Add `irpacific.com` -> add the DNS records it shows (SPF/DKIM) at your DNS provider -> Verify.
-2. API Keys -> Create (Sending access) -> copy the key into `RESEND_API_KEY` in the app's environment variables.
-3. Set `EMAIL_FROM` to the sender address (e.g. operations@irpacific.com). Saving env vars redeploys the app.
+## 6. Email (meeting summaries) via Office 365 SMTP
+The app sends through `smtp.office365.com` port 587 (STARTTLS, TLS 1.2+), logged in as `SMTP_USER`.
+1. **Enable Authenticated SMTP on the mailbox**: Microsoft 365 admin center -> Users -> Active users -> select the
+   sender mailbox (info@irpnw.com) -> Mail -> Manage email apps -> check **Authenticated SMTP** -> Save. (If Security Defaults are on in
+   Microsoft Entra ID, SMTP AUTH is blocked tenant-wide until they are turned off or replaced with Conditional Access.)
+2. If the mailbox uses MFA, password login over SMTP will be rejected; use a dedicated, licensed mailbox without MFA
+   (e.g. operations@irpacific.com) for sending.
+3. **Ask DigitalOcean to unblock outbound SMTP**: DigitalOcean blocks ports 25/465/587 by default. Open a ticket at
+   cloud.digitalocean.com/support -> "Networking" and ask them to allow outbound SMTP on port 587 for your account
+   so the app `irpacific-app` can send through your own Office 365 tenant (smtp.office365.com). Until they do,
+   sending shows: "Could not reach smtp.office365.com:587 ... the hosting provider may be blocking outbound SMTP".
+4. Test: open a meeting -> Send Summary. Errors are shown in the app and in the app's Runtime Logs.
 
 ## 7. First login and data load
 1. Open https://app.irpacific.com and sign in as joe@irpacific.com with `SEED_USER_PASSWORD`.
@@ -64,7 +72,13 @@ DigitalOcean auto-deploys every push to `main`; the db-migrate job applies schem
 goes live. Data in the database is kept between deploys.
 
 ## Troubleshooting
+- **Build fails with `npm error ERESOLVE`**: an old zip is in the repo. Push the latest zip (v1.0.2 or later), which
+  installs cleanly with plain npm. Do not add `npm_config_legacy_peer_deps`.
 - **Build fails on `prisma generate`**: check the Node version in logs is 22.x (set by `engines` in package.json).
 - **`permission denied for schema public`**: you are using an App Platform *dev* database; use the managed cluster from step 3.
 - **Login loops back to /login**: `AUTH_SECRET` missing, or `NEXTAUTH_URL`/`AUTH_URL` don't match the URL you are using.
+- **"Office 365 rejected the SMTP login"**: wrong password, Authenticated SMTP not enabled for the mailbox, MFA on the
+  mailbox, or Security Defaults blocking SMTP AUTH (see step 6).
+- **"5.7.60 SMTP; Client does not have permissions to send as this sender"**: `SMTP_FROM` differs from `SMTP_USER` and
+  the mailbox lacks Send As rights. Set `SMTP_FROM` equal to `SMTP_USER`.
 - **Before the domain is active**: temporarily set `NEXTAUTH_URL` and `AUTH_URL` to the `.ondigitalocean.app` URL.
