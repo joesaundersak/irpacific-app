@@ -10,6 +10,9 @@ import { TrendingUp, AlertCircle, Clock, DollarSign, ArrowUpDown, UserX } from '
 import { formatCurrency, formatPercent } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
 import { AddActionItemDialog } from '@/components/add-action-item-dialog'
+import { Label } from '@/components/ui/label'
+import { ForecastFilters } from '@/components/forecast-filters'
+import { useSharedFilters, filterParams } from '@/lib/use-shared-filters'
 
 interface Lead {
   id: string; opportunityTitle: string; clientContact: string | null; confidence: number
@@ -26,12 +29,12 @@ export function PipelineClient() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState({ salesperson: '', stale: '', status: '' })
+  const [filter, setFilter] = useState({ stale: '', status: '' })
   const [users, setUsers] = useState<any[]>([])
+  const { f, set, ready } = useSharedFilters()
 
   const loadData = useCallback((isStale: () => boolean = () => false) => {
-    const params = new URLSearchParams()
-    if (filter.salesperson) params.set('salesperson', filter.salesperson)
+    const params = filterParams(f)
     if (filter.stale === 'true') params.set('stale', 'true')
     if (filter.stale === 'nopm') params.set('noPm', 'true')
     if (filter.stale === 'missing') params.set('missingInfo', 'true')
@@ -42,13 +45,14 @@ export function PipelineClient() {
       .then((d) => { if (isStale()) return; setLeads(d.leads ?? []); setSummary(d.summary ?? null) })
       .catch(console.error)
       .finally(() => { if (!isStale()) setLoading(false) })
-  }, [filter])
+  }, [filter, f])
 
   useEffect(() => {
+    if (!ready) return
     let stale = false
     loadData(() => stale)
     return () => { stale = true }
-  }, [loadData])
+  }, [loadData, ready])
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
   }, [])
@@ -87,28 +91,30 @@ export function PipelineClient() {
         </div>
       </FadeIn>
 
-      {/* Filters */}
+      {/* Filters (shared with Dashboard and Forecast) */}
       <FadeIn delay={0.1}>
-        <Card>
-          <CardContent className="p-4 flex flex-wrap gap-3">
-            <Select value={filter.salesperson} onValueChange={(v) => setFilter(f => ({ ...f, salesperson: v === 'all' ? '' : v }))}>
-              <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Salespeople" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Salespeople</SelectItem>
-                {users.map((u: any) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filter.stale} onValueChange={(v) => setFilter(f => ({ ...f, stale: v === 'all' ? '' : v }))}>
-              <SelectTrigger className="w-[150px]"><SelectValue placeholder="All Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Leads</SelectItem>
-                <SelectItem value="true">Stale Only</SelectItem>
-                <SelectItem value="nopm">No PM Assigned</SelectItem>
-                <SelectItem value="missing">Missing Info</SelectItem>
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
+        <ForecastFilters
+          f={f}
+          set={set}
+          users={users}
+          fields={['minConfidence', 'state', 'pm', 'type']}
+          pmLabel="Salesperson / PM"
+          storageKey="irp_pipeline_filters_open"
+          extra={
+            <div className="space-y-1.5">
+              <Label className="text-xs">Show</Label>
+              <Select value={filter.stale || 'all'} onValueChange={(v) => setFilter(prev => ({ ...prev, stale: v === 'all' ? '' : v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Leads</SelectItem>
+                  <SelectItem value="true">Stale Only</SelectItem>
+                  <SelectItem value="nopm">No PM Assigned</SelectItem>
+                  <SelectItem value="missing">Missing Info</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          }
+        />
       </FadeIn>
 
       {/* Leads Table */}

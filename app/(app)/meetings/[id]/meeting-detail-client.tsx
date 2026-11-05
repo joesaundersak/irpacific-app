@@ -16,8 +16,11 @@ import { ArrowLeft, Send, Plus, CheckCircle, Clock, AlertTriangle, Users, Trophy
 import { formatDate } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
+import { DeleteMeetingButton } from '@/components/delete-meeting-button'
 
-export function MeetingDetailClient({ meetingId }: { meetingId: string }) {
+export function MeetingDetailClient({ meetingId, canDelete = false }: { meetingId: string; canDelete?: boolean }) {
+  const router = useRouter()
   const [meeting, setMeeting] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [notes, setNotes] = useState('')
@@ -100,9 +103,12 @@ export function MeetingDetailClient({ meetingId }: { meetingId: string }) {
           title={meeting?.title ?? 'Meeting'}
           description={`${formatDate(meeting?.meetingDate)} • Created by ${meeting?.createdBy?.name ?? 'Unknown'}`}
           actions={
-            <Button onClick={sendSummary} disabled={sending}>
-              <Send className="h-4 w-4 mr-2" />{sending ? 'Sending...' : 'Send Summary'}
-            </Button>
+            <div className="flex items-center gap-2">
+              {canDelete && <DeleteMeetingButton meetingId={meetingId} title={meeting?.title ?? 'Meeting'} onDeleted={() => router.push('/meetings')} />}
+              <Button onClick={sendSummary} disabled={sending}>
+                <Send className="h-4 w-4 mr-2" />{sending ? 'Sending...' : 'Send Summary'}
+              </Button>
+            </div>
           }
         />
       </div>

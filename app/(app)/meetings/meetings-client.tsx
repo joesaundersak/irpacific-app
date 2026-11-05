@@ -14,8 +14,9 @@ import { Users, Plus, ArrowRight, Calendar } from 'lucide-react'
 import { formatDate } from '@/lib/format'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/animate'
 import { toast } from 'sonner'
+import { DeleteMeetingButton } from '@/components/delete-meeting-button'
 
-export function MeetingsClient() {
+export function MeetingsClient({ canDelete = false }: { canDelete?: boolean }) {
   const [meetings, setMeetings] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -86,15 +87,15 @@ export function MeetingsClient() {
           ) : (
             meetings.map((m: any) => (
               <StaggerItem key={m.id}>
-                <Link href={`/meetings/${m.id}`}>
-                  <Card className="hover:bg-accent/50 transition-colors cursor-pointer">
-                    <CardContent className="p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
+                <Card className="hover:bg-accent/50 transition-colors">
+                  <CardContent className="p-0 flex items-center">
+                    <Link href={`/meetings/${m.id}`} className="flex-1 p-4 flex items-center justify-between gap-4 min-w-0">
+                      <div className="flex items-center gap-4 min-w-0">
                         <div className="p-2 rounded-lg bg-primary/10 text-primary">
                           <Calendar className="h-5 w-5" />
                         </div>
-                        <div>
-                          <p className="font-medium">{m.title}</p>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{m.title}</p>
                           <p className="text-xs text-muted-foreground">{formatDate(m.meetingDate)} • {m._count?.actionItems ?? 0} action items</p>
                         </div>
                       </div>
@@ -103,9 +104,14 @@ export function MeetingsClient() {
                         <Badge variant="secondary" className="text-xs">{m.status}</Badge>
                         <ArrowRight className="h-4 w-4 text-muted-foreground" />
                       </div>
-                    </CardContent>
-                  </Card>
-                </Link>
+                    </Link>
+                    {canDelete && (
+                      <div className="pr-3">
+                        <DeleteMeetingButton meetingId={m.id} title={m.title} iconOnly onDeleted={() => setMeetings(prev => prev.filter(x => x.id !== m.id))} />
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </StaggerItem>
             ))
           )}

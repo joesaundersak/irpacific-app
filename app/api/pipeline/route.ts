@@ -4,6 +4,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { isOpenLead } from '@/lib/schedule-rules'
 import { leadMissingInfo } from '@/lib/missing-info'
+import { parseFilters, leadWhere, leadMatches, leadConfidencePct } from '@/lib/shared-filters'
 
 export async function GET(request: Request) {
   try {
@@ -11,19 +12,18 @@ export async function GET(request: Request) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const url = new URL(request.url)
-    const salespersonId = url.searchParams.get('salesperson') ?? undefined
+    const filters = parseFilters(url.searchParams)
     const staleOnly = url.searchParams.get('stale') === 'true'
     const status = url.searchParams.get('status') ?? undefined
     const noPmOnly = url.searchParams.get('noPm') === 'true'
     const missingOnly = url.searchParams.get('missingInfo') === 'true'
 
-    const where: any = {}
-    if (salespersonId) where.salespersonId = salespersonId
+    const where: any = { ...leadWhere(filters) }
     if (noPmOnly) where.salespersonId = null
     if (staleOnly) where.isStale = true
     if (status) where.proposalStatus = { contains: status }
 
-    const leads = await prisma.lead.findMany({
+    const allLeads = await prisma.lead.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
@@ -31,13 +31,15 @@ export async function GET(request: Request) {
         linkedJob: { select: { id: true, jobCode: true, jobName: true } },
       },
     })
+    // Shared filters: minimum confidence % and install/product type (same rules as the Forecast)
+    const leads = allLeads.filter((l: any) => leadMatches(l, filters))
 
     const noPm = (l: any) => !l.salespersonId && isOpenLead(l)
     const missingInfo = (l: any) => (isOpenLead(l) ? leadMissingInfo(l) : [])
     const shown = leads.filter((l: any) => (!noPmOnly || noPm(l)) && (!missingOnly || missingInfo(l).length > 0))
     const totalWeighted = leads.reduce((s: number, l: any) => s + (l.weightedValue ?? 0), 0)
     const avgConfidence = leads.length > 0
-      ? leads.reduce((s: number, l: any) => s + (l.confidence ?? 0), 0) / leads.length
+      ? leads.reduce((s: number, l: any) => s + leadConfidencePct(l) / 100, 0) / leads.length
       : 0
 
     return NextResponse.json({

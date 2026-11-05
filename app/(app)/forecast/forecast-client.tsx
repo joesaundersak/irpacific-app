@@ -6,17 +6,17 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/layouts/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { BarChart3, Filter, AlertTriangle, Info, Target } from 'lucide-react'
+import { BarChart3, AlertTriangle, Info, Target } from 'lucide-react'
 import { formatCurrency } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
 import { useSession } from 'next-auth/react'
 import { toast } from 'sonner'
+import { ForecastFilters, CollapsibleCard } from '@/components/forecast-filters'
+import { useSharedFilters, filterParams } from '@/lib/use-shared-filters'
 
 const ForecastChart = dynamic(() => import('./forecast-chart'), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center text-muted-foreground">Loading chart...</div> })
 
@@ -27,7 +27,7 @@ export function ForecastClient() {
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [users, setUsers] = useState<any[]>([])
-  const [f, setF] = useState({ includeLeads: false, minConfidence: '60', state: 'all', pm: 'all', type: 'all', months: '12' })
+  const { f, set, ready, refresh } = useSharedFilters()
   const [targetForm, setTargetForm] = useState({ revenue: '', margin: '25' })
   const [savingTargets, setSavingTargets] = useState(false)
   const { data: session } = useSession() || {}
@@ -38,25 +38,19 @@ export function ForecastClient() {
   }, [])
 
   useEffect(() => {
-    const p = new URLSearchParams()
-    p.set('includeLeads', String(f.includeLeads))
-    p.set('minConfidence', f.minConfidence)
-    p.set('months', f.months)
-    if (f.state !== 'all') p.set('state', f.state)
-    if (f.pm !== 'all') p.set('pm', f.pm)
-    if (f.type !== 'all') p.set('type', f.type)
+    if (!ready) return
+    const p = filterParams(f, { includeLeads: String(f.includeLeads), months: f.months })
     setLoading(true)
     fetch(`/api/forecast?${p}`)
       .then(r => r.json())
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [f])
+  }, [f, ready])
 
   const rows: any[] = data?.rows ?? []
   const months: string[] = data?.months ?? []
   const showLeads = f.includeLeads
-  const set = (k: keyof typeof f, v: any) => setF(prev => ({ ...prev, [k]: v }))
 
   const revenueTarget: number = data?.targets?.revenueMonthly ?? 0
   const targetMargin: number = data?.targets?.marginPct ?? 25
@@ -82,81 +76,13 @@ export function ForecastClient() {
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(d.error ?? 'Failed to save targets'); return }
       toast.success('Targets saved')
-      setF(prev => ({ ...prev }))
+      refresh()
     } catch { toast.error('Failed to save targets') } finally { setSavingTargets(false) }
   }
 
   return (
     <div className="space-y-6">
       <PageHeader title="Revenue Forecast" description="Progress-billing forecast for scheduled projects, with optional weighted lead opportunities" />
-
-      <FadeIn>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3 text-sm font-medium"><Filter className="h-4 w-4 text-primary" />Filters</div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 items-end">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Include Leads</Label>
-                <div className="flex items-center gap-2 h-9">
-                  <Switch checked={f.includeLeads} onCheckedChange={(v) => set('includeLeads', v)} />
-                  <span className="text-xs text-muted-foreground">{f.includeLeads ? 'On' : 'Off'}</span>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Lead Confidence</Label>
-                <Select value={f.minConfidence} onValueChange={(v) => set('minConfidence', v)} disabled={!f.includeLeads}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['0', '25', '50', '60', '75', '90'].map(c => <SelectItem key={c} value={c}>{c === '0' ? 'All leads' : `${c}% or more`}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">State</Label>
-                <Select value={f.state} onValueChange={(v) => set('state', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All states</SelectItem>
-                    <SelectItem value="WA">Washington</SelectItem>
-                    <SelectItem value="OR">Oregon</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Project Manager</Label>
-                <Select value={f.pm} onValueChange={(v) => set('pm', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All PMs</SelectItem>
-                    <SelectItem value="none">No PM assigned</SelectItem>
-                    {users.map((u: any) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Project Type</Label>
-                <Select value={f.type} onValueChange={(v) => set('type', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All types</SelectItem>
-                    <SelectItem value="install">Install</SelectItem>
-                    <SelectItem value="product">Product sale</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Horizon</Label>
-                <Select value={f.months} onValueChange={(v) => set('months', v)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['6', '12', '18', '24'].map(m => <SelectItem key={m} value={m}>{m} months</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </FadeIn>
 
       <FadeIn>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -179,9 +105,38 @@ export function ForecastClient() {
 
       <FadeIn>
         <Card>
-          <CardContent className="p-4 space-y-4">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-primary" />{f.months}-Month Billing Forecast
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loading && !data ? (
+              <div className="h-[400px] flex items-center justify-center text-muted-foreground">Loading forecast...</div>
+            ) : rows.every(r => r.total === 0) ? (
+              <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm text-center px-6">No forecast revenue for these filters. Only projects with schedule dates are forecast — enter the schedule in BuilderTrend and re-import, or include leads.</div>
+            ) : (
+              <ForecastChart data={rows} showLeads={showLeads} showTarget={hasRevTarget} />
+            )}
+            {data?.model && (
+              <p className="text-xs text-muted-foreground flex items-start gap-1.5 mt-3">
+                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>
+                  Install projects bill by phase: {data.model.phases.map((p: any) => `${p.label} ${p.bill}%`).join(' · ')}. Actual schedule dates are used for each phase; missing phases use default timeline shares. Product sales bill {data.model.productDeposit}% at PO and the balance at delivery. Already-invoiced or earned amounts are excluded. Leads are weighted by confidence. Adjust in Settings.
+                </span>
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </FadeIn>
+
+      <FadeIn>
+        <ForecastFilters f={f} set={set} users={users} storageKey="irp_forecast_filters_open" />
+      </FadeIn>
+      <FadeIn>
+        <CollapsibleCard title="Targets" icon={<Target className="h-4 w-4 text-primary" />} storageKey="irp_forecast_targets_open" summary={hasRevTarget ? `${formatCurrency(revenueTarget)}/mo · ${targetMargin}% margin` : 'No revenue target set'}>
+          <div className="space-y-4">
             <div className="flex flex-wrap items-end gap-3">
-              <div className="flex items-center gap-2 text-sm font-medium mr-2"><Target className="h-4 w-4 text-primary" />Targets</div>
               <div className="space-y-1">
                 <Label className="text-xs">Monthly revenue target ($)</Label>
                 <Input type="number" min="0" step="1000" className="h-9 w-[170px]" value={targetForm.revenue} onChange={(e) => setTargetForm(t => ({ ...t, revenue: e.target.value }))} disabled={!isAdmin} />
@@ -217,35 +172,8 @@ export function ForecastClient() {
               </div>
             </div>
             <p className="text-xs text-muted-foreground">Projected profit uses each project’s projected margin from BuilderTrend (WIP); projects without one, and leads, use the target margin.</p>
-          </CardContent>
-        </Card>
-      </FadeIn>
-
-      <FadeIn>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-primary" />{f.months}-Month Billing Forecast
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading && !data ? (
-              <div className="h-[400px] flex items-center justify-center text-muted-foreground">Loading forecast...</div>
-            ) : rows.every(r => r.total === 0) ? (
-              <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm text-center px-6">No forecast revenue for these filters. Only projects with schedule dates are forecast — enter the schedule in BuilderTrend and re-import, or include leads.</div>
-            ) : (
-              <ForecastChart data={rows} showLeads={showLeads} showTarget={hasRevTarget} />
-            )}
-            {data?.model && (
-              <p className="text-xs text-muted-foreground flex items-start gap-1.5 mt-3">
-                <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>
-                  Install projects bill by phase: {data.model.phases.map((p: any) => `${p.label} ${p.bill}%`).join(' · ')}. Actual schedule dates are used for each phase; missing phases use default timeline shares. Product sales bill {data.model.productDeposit}% at PO and the balance at delivery. Already-invoiced or earned amounts are excluded. Leads are weighted by confidence. Adjust in Settings.
-                </span>
-              </p>
-            )}
-          </CardContent>
-        </Card>
+          </div>
+        </CollapsibleCard>
       </FadeIn>
 
       <FadeIn>

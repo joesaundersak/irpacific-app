@@ -2,36 +2,39 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { parseFilters, leadWhere, leadMatches, jobWhere, jobMatchesType } from '@/lib/shared-filters'
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Shared filters (same as Forecast / Sales Pipeline)
+    const filters = parseFilters(new URL(request.url).searchParams)
 
     const targetMarginConfig = await prisma.systemConfig.findUnique({ where: { key: 'target_margin' } })
     const targetMargin = parseFloat(targetMarginConfig?.value ?? '25')
 
     // Weighted pipeline
-    const leads = await prisma.lead.findMany({
-      where: { leadStatus: { not: 'Closed' } },
-      select: { weightedValue: true, isStale: true, salespersonId: true },
+    const allLeads = await prisma.lead.findMany({
+      where: { leadStatus: { not: 'Closed' }, ...leadWhere(filters) },
+      select: { weightedValue: true, isStale: true, salespersonId: true, confidence: true, opportunityTitle: true, tags: true },
     })
+    const leads = allLeads.filter((l: any) => leadMatches(l, filters))
     const weightedPipeline = leads.reduce((sum: number, l: any) => sum + (l.weightedValue ?? 0), 0)
     const staleLeads = leads.filter((l: any) => l.isStale).length
 
-    // Active projects
-    const activeJobs = await prisma.job.count({ where: { status: 'OPEN' } })
-
-    // At-risk jobs
-    const allJobs = await prisma.job.findMany({
-      where: { status: 'OPEN' },
+    // Open jobs matching the filters (active projects + at-risk)
+    const allJobs = (await prisma.job.findMany({
+      where: { status: 'OPEN', ...jobWhere(filters) },
       select: {
-        id: true, jobCode: true, jobName: true, projectManagerId: true,
+        id: true, jobCode: true, jobName: true, jobType: true, groups: true, projectManagerId: true,
         totalRevisedPrice: true, actualCosts: true, projectedProfitPct: true,
         percentComplete: true, projectedCompletion: true,
         projectManager: { select: { name: true } },
       },
-    })
+    })).filter((j: any) => jobMatchesType(j, filters))
+    const activeJobs = allJobs.length
 
     const atRiskJobs = allJobs.filter((j: any) => {
       const margin = j.totalRevisedPrice > 0

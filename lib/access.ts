@@ -6,6 +6,7 @@ export const SECTIONS = [
   { key: 'forecast', label: 'Revenue Forecast', href: '/forecast' },
   { key: 'ap', label: 'AP Calendar', href: '/ap-calendar' },
   { key: 'meetings', label: 'Team Meetings', href: '/meetings' },
+  { key: 'deleteMeetings', label: 'Delete meetings', href: '/meetings' },
   { key: 'accountability', label: 'Action Items', href: '/action-items' },
   { key: 'imports', label: 'Import Data', href: '/imports' },
   { key: 'settings', label: 'Settings (system config)', href: '/settings' },
@@ -18,8 +19,8 @@ export type AccessMap = Record<SectionKey, boolean>
 export function defaultAccess(roleName: string | null | undefined): AccessMap {
   const all = Object.fromEntries(SECTIONS.map(s => [s.key, true])) as AccessMap
   if (roleName === 'Admin') return all
-  if (roleName === 'Office Manager') return { ...all, settings: false, users: false }
-  return { ...all, imports: false, settings: false, users: false }
+  if (roleName === 'Office Manager') return { ...all, settings: false, users: false, deleteMeetings: false }
+  return { ...all, imports: false, settings: false, users: false, deleteMeetings: false }
 }
 
 export function effectiveAccess(roleName: string | null | undefined, permissions: unknown): AccessMap {

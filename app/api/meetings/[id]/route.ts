@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { getCurrentUser } from '@/lib/access-server'
 
 export async function GET(
   _request: Request,
@@ -83,5 +84,30 @@ export async function PUT(
   } catch (error: any) {
     console.error('Update meeting error:', error)
     return NextResponse.json({ error: 'Failed to update meeting' }, { status: 500 })
+  }
+}
+
+/** Deletes a meeting (needs the "Delete meetings" permission). Its action items are kept and simply unlinked. */
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const me = await getCurrentUser()
+    if (!me) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!me.access.deleteMeetings) return NextResponse.json({ error: 'You do not have permission to delete meetings' }, { status: 403 })
+    const { id } = await params
+
+    const existing = await prisma.meeting.findUnique({ where: { id }, select: { id: true } })
+    if (!existing) return NextResponse.json({ error: 'Meeting not found' }, { status: 404 })
+
+    await prisma.$transaction([
+      prisma.actionItem.updateMany({ where: { meetingId: id }, data: { meetingId: null } }),
+      prisma.meeting.delete({ where: { id } }),
+    ])
+    return NextResponse.json({ ok: true })
+  } catch (error: any) {
+    console.error('Delete meeting error:', error)
+    return NextResponse.json({ error: 'Failed to delete meeting' }, { status: 500 })
   }
 }

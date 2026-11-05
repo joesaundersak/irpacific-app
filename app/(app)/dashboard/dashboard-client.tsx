@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/format'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/animate'
+import { ForecastFilters } from '@/components/forecast-filters'
+import { useSharedFilters, filterParams } from '@/lib/use-shared-filters'
 
 interface DashboardData {
   weightedPipeline: number
@@ -29,16 +31,23 @@ interface DashboardData {
 export function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([])
+  const { f, set, ready } = useSharedFilters()
 
   useEffect(() => {
-    fetch('/api/dashboard')
+    fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
+  }, [])
+
+  useEffect(() => {
+    if (!ready) return
+    fetch(`/api/dashboard?${filterParams(f)}`)
       .then((r) => r.json())
       .then(setData)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [f, ready])
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="space-y-6">
         <PageHeader title="Dashboard" description="Operations overview" />
@@ -52,7 +61,7 @@ export function DashboardClient() {
   }
 
   const kpis = [
-    { label: 'Weighted Pipeline', value: formatCurrency(data?.weightedPipeline), icon: TrendingUp, color: 'text-primary' },
+    { label: `Weighted Pipeline${f.minConfidence !== '0' ? ` (≥${f.minConfidence}%)` : ''}`, value: formatCurrency(data?.weightedPipeline), icon: TrendingUp, color: 'text-primary', href: '/pipeline' },
     { label: 'Active Projects', value: String(data?.activeProjects ?? 0), icon: FolderKanban, color: 'text-blue-600' },
     { label: 'At-Risk Jobs', value: String(data?.atRiskCount ?? 0), icon: AlertTriangle, color: data?.atRiskCount ? 'text-red-500' : 'text-green-600' },
     { label: 'Stale Leads', value: String(data?.staleLeads ?? 0), icon: Clock, color: data?.staleLeads ? 'text-amber-500' : 'text-green-600' },
@@ -65,6 +74,9 @@ export function DashboardClient() {
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" description="Real-time operations overview for Interior Resources" />
+      <FadeIn>
+        <ForecastFilters f={f} set={set} users={users} fields={['minConfidence', 'state', 'pm', 'type']} storageKey="irp_dashboard_filters_open" />
+      </FadeIn>
       <FadeIn>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {kpis.map((kpi: any, i) => (
