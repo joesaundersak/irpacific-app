@@ -91,11 +91,27 @@ export async function syncAccountabilityFlags(): Promise<{ created: number; reso
 
   const existing = await prisma.actionItem.findMany({
     where: { source: FLAG_SOURCE, category: { in: FLAG_CATEGORIES }, status: { not: 'complete' } },
-    select: { id: true, category: true, jobId: true, leadId: true, description: true, assignedToId: true },
+    select: { id: true, category: true, jobId: true, leadId: true, description: true, assignedToId: true, assigneeLocked: true },
   })
+  const keyOf = (e: { category: string; jobId: string | null; leadId: string | null }) =>
+    e.jobId ? `${e.category}:job:${e.jobId}` : `${e.category}:lead:${e.leadId}`
+  // Items a person closed by hand: don't recreate them while the same gap remains
+  const dismissedItems = await prisma.actionItem.findMany({
+    where: { source: FLAG_SOURCE, category: { in: FLAG_CATEGORIES }, status: 'complete', dismissed: true },
+    select: { id: true, category: true, jobId: true, leadId: true },
+  })
+  const dismissedKeys = new Set<string>()
+  const desiredKeySet = new Set(desired.map(d => d.key))
+  const clearDismissed: string[] = []
+  for (const d of dismissedItems) {
+    const k = keyOf(d)
+    if (desiredKeySet.has(k)) dismissedKeys.add(k)
+    else clearDismissed.push(d.id) // gap was fixed, so a future recurrence gets flagged again
+  }
+  if (clearDismissed.length) await prisma.actionItem.updateMany({ where: { id: { in: clearDismissed } }, data: { dismissed: false } })
   const existingByKey = new Map<string, any>()
   for (const e of existing) {
-    const key = e.jobId ? `${e.category}:job:${e.jobId}` : `${e.category}:lead:${e.leadId}`
+    const key = keyOf(e)
     if (existingByKey.has(key)) { await prisma.actionItem.update({ where: { id: e.id }, data: { status: 'complete' } }); continue }
     existingByKey.set(key, e)
   }
@@ -112,10 +128,17 @@ export async function syncAccountabilityFlags(): Promise<{ created: number; reso
   for (const d of desired) {
     const e = existingByKey.get(d.key)
     if (!e) {
+      if (dismissedKeys.has(d.key)) continue
       toCreate.push({ description: d.description, assignedToId: d.assignedToId, category: d.category, source: FLAG_SOURCE, jobId: d.jobId ?? null, leadId: d.leadId ?? null, priority: d.priority })
-    } else if (e.description !== d.description || e.assignedToId !== d.assignedToId) {
-      await prisma.actionItem.update({ where: { id: e.id }, data: { description: d.description, assignedToId: d.assignedToId } })
-      updated++
+    } else {
+      const reassign = !e.assigneeLocked && e.assignedToId !== d.assignedToId
+      if (e.description !== d.description || reassign) {
+        await prisma.actionItem.update({
+          where: { id: e.id },
+          data: { description: d.description, ...(reassign ? { assignedToId: d.assignedToId } : {}) },
+        })
+        updated++
+      }
     }
   }
   if (toCreate.length) { await prisma.actionItem.createMany({ data: toCreate }); created = toCreate.length }

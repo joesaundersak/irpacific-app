@@ -248,6 +248,10 @@ model ActionItem {
   lead        Lead?     @relation("LeadActionItems", fields: [leadId], references: [id])
   meetingId   String?
   meeting     Meeting?  @relation(fields: [meetingId], references: [id])
+  // Set when a person reassigns the item; auto-flag sync then keeps their assignee
+  assigneeLocked Boolean @default(false)
+  // Set when a person completes an auto-flag item; sync won't recreate it while the same gap remains
+  dismissed   Boolean   @default(false)
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

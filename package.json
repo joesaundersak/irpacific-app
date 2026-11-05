@@ -115,7 +115,7 @@
   "engines": {
     "node": "22.x"
   },
-  "version": "1.0.12",
+  "version": "1.0.13",
   "overrides": {
     "motion-dom": "12.23.12",
     "motion-utils": "12.23.6"
