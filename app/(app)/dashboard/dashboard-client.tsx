@@ -60,6 +60,10 @@ export function DashboardClient() {
     )
   }
 
+  const lastImport = data?.recentImports?.[0]
+  const formatDateTime = (iso: string) =>
+    new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+
   const kpis = [
     { label: `Weighted Pipeline${f.minConfidence !== '0' ? ` (≥${f.minConfidence}%)` : ''}`, value: formatCurrency(data?.weightedPipeline), icon: TrendingUp, color: 'text-primary', href: '/pipeline' },
     { label: 'Active Projects', value: String(data?.activeProjects ?? 0), icon: FolderKanban, color: 'text-blue-600' },
@@ -74,9 +78,17 @@ export function DashboardClient() {
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" description="Real-time operations overview for Interior Resources" />
-      <FadeIn>
-        <ForecastFilters f={f} set={set} users={users} fields={['minConfidence', 'state', 'pm', 'type']} storageKey="irp_dashboard_filters_open" />
-      </FadeIn>
+      <p className="-mt-3 text-sm text-muted-foreground flex items-center gap-2">
+        <Upload className="h-4 w-4 text-primary" />
+        {lastImport ? (
+          <span>
+            Last import: <span className="font-medium text-foreground">{formatDateTime(lastImport.createdAt)}</span>
+            {' '}— {lastImport.fileName} ({lastImport.fileType}) by {lastImport.importedBy}
+          </span>
+        ) : (
+          <span>No imports yet</span>
+        )}
+      </p>
       <FadeIn>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {kpis.map((kpi: any, i) => (
@@ -191,23 +203,7 @@ export function DashboardClient() {
       </div>
 
       <FadeIn delay={0.4}>
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-sm font-medium flex items-center gap-2"><Upload className="h-4 w-4 text-primary" />Recent Imports</CardTitle></CardHeader>
-          <CardContent>
-            {(data?.recentImports?.length ?? 0) === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No imports yet</p>
-            ) : (
-              <div className="space-y-2">
-                {(data?.recentImports ?? []).map((imp: any) => (
-                  <div key={imp.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                    <div><p className="text-sm font-medium">{imp.fileName}</p><p className="text-xs text-muted-foreground">{imp.fileType} • {imp.recordsProcessed} records • by {imp.importedBy}</p></div>
-                    <span className="text-xs text-muted-foreground">{formatDate(imp.createdAt)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <ForecastFilters f={f} set={set} users={users} fields={['minConfidence', 'state', 'pm', 'type']} storageKey="irp_dashboard_filters_open" />
       </FadeIn>
     </div>
   )

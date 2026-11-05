@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     // Recent imports
     const recentImports = await prisma.importHistory.findMany({
       orderBy: { createdAt: 'desc' },
-      take: 3,
+      take: 1,
       include: { importedBy: { select: { name: true } } },
     })
 

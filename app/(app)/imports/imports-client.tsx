@@ -5,10 +5,33 @@ import { PageHeader } from '@/components/layouts/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react'
-import { formatDate } from '@/lib/format'
+import { Upload, FileSpreadsheet, CheckCircle, AlertTriangle, Loader2, ListChecks } from 'lucide-react'
+import { CollapsibleCard } from '@/components/forecast-filters'
 import { FadeIn } from '@/components/ui/animate'
 import { toast } from 'sonner'
+
+const BT_EXPORTS = [
+  {
+    name: 'Jobsites',
+    where: 'Jobs → Jobs List. Show all jobs (open and closed) with all columns, then Export to Excel.',
+    feeds: 'Job codes, names, PM, client, contract price, status and Job Groups ("Product Only" marks product sales).',
+  },
+  {
+    name: 'Work in Progress (WIP) Report',
+    where: 'Reports → Work in Progress report for all open jobs, then Export to Excel.',
+    feeds: 'Revised price, projected and actual costs, invoiced amount and % complete (margin, at-risk jobs and the forecast).',
+  },
+  {
+    name: 'Schedule – All Listed Jobs',
+    where: 'Schedule → List view with All Listed Jobs selected, then Export to Excel.',
+    feeds: 'Phase dates (Contracting/Pre-Con, Procurement, Installation, Punch List, Completion, PO Due Date, Customer Delivery) and AP items (Phase = AP).',
+  },
+  {
+    name: 'Lead Opportunities',
+    where: 'Sales → Lead Opportunities list with all columns shown (including Related Job, Tags, Confidence and estimated revenue), then Export to Excel.',
+    feeds: 'Sales pipeline, confidence %, salesperson, Tags ("Product Only") and weighted leads in the forecast.',
+  },
+]
 
 export function ImportsClient() {
   const [history, setHistory] = useState<any[]>([])
@@ -18,13 +41,15 @@ export function ImportsClient() {
   const [lastResult, setLastResult] = useState<any>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetch('/api/dashboard')
+  const loadHistory = useCallback(() => {
+    return fetch('/api/imports/history')
       .then(r => r.json())
-      .then(d => setHistory(d?.recentImports ?? []))
+      .then(d => setHistory(d?.imports ?? []))
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => { loadHistory() }, [loadHistory])
 
   const handleUpload = useCallback(async (file: File) => {
     if (!file) return
@@ -51,7 +76,7 @@ export function ImportsClient() {
         const flagged = data?.flags?.created ?? 0
         toast.success(`${file.name}: ${data?.records?.added ?? 0} added, ${data?.records?.updated ?? 0} updated${flagged ? `, ${flagged} flagged for missing info` : ''}`)
         // Reload history
-        fetch('/api/dashboard').then(r => r.json()).then(d => setHistory(d?.recentImports ?? []))
+        loadHistory()
       } else {
         const msg = data?.error ?? `Server returned ${res.status} ${res.statusText}${text ? ` — ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)}` : ''}`
         console.error('Import failed:', file.name, msg)
@@ -66,7 +91,7 @@ export function ImportsClient() {
     } finally {
       setUploading(false)
     }
-  }, [])
+  }, [loadHistory])
 
   // Several exports can be dropped at once; they are imported one after another
   const handleFiles = useCallback(async (files: FileList | null | undefined) => {
@@ -88,6 +113,30 @@ export function ImportsClient() {
   return (
     <div className="space-y-6">
       <PageHeader title="Import Data" description="Upload BuilderTrend export files to sync project and lead data" />
+
+      <CollapsibleCard
+        title="What to export from BuilderTrend"
+        icon={<ListChecks className="h-4 w-4 text-primary" />}
+        storageKey="irp_import_help_open"
+        summary="4 exports: Jobsites, WIP, Schedule, Lead Opportunities"
+      >
+        <p className="text-sm text-muted-foreground mb-4">
+          Export these four reports from BuilderTrend as Excel files (.xls or .xlsx) and drop them all in the box below at once.
+          The app recognizes each file automatically, so file names and order don&apos;t matter. Import all four together so the numbers line up.
+        </p>
+        <ol className="grid gap-3 md:grid-cols-2">
+          {BT_EXPORTS.map((x, i) => (
+            <li key={x.name} className="rounded-lg bg-muted/50 p-4">
+              <p className="text-sm font-semibold"><span className="text-primary">{i + 1}.</span> {x.name}</p>
+              <p className="text-sm mt-1"><span className="font-medium">Where:</span> {x.where}</p>
+              <p className="text-xs text-muted-foreground mt-1"><span className="font-medium">Used for:</span> {x.feeds}</p>
+            </li>
+          ))}
+        </ol>
+        <p className="text-xs text-muted-foreground mt-4">
+          Don&apos;t edit the files before uploading. Missing data never blocks an import; it&apos;s flagged as an action item so it can be fixed in BuilderTrend and re-imported.
+        </p>
+      </CollapsibleCard>
 
       {/* Drop Zone */}
       <FadeIn>
@@ -188,7 +237,7 @@ export function ImportsClient() {
       {/* Import History */}
       <FadeIn delay={0.1}>
         <Card>
-          <CardHeader><CardTitle className="text-sm font-medium flex items-center gap-2"><FileSpreadsheet className="h-4 w-4 text-primary" />Import History</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm font-medium flex items-center gap-2"><FileSpreadsheet className="h-4 w-4 text-primary" />Import History{history.length > 0 && <span className="text-muted-foreground font-normal">({history.length})</span>}</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
@@ -196,21 +245,25 @@ export function ImportsClient() {
                   <TableHead>File</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Records</TableHead>
+                  <TableHead>Added / Updated</TableHead>
                   <TableHead>Imported By</TableHead>
                   <TableHead>Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {history.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No imports yet</TableCell></TableRow>
+                {loading ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">Loading…</TableCell></TableRow>
+                ) : history.length === 0 ? (
+                  <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">No imports yet</TableCell></TableRow>
                 ) : (
                   history.map((h: any) => (
                     <TableRow key={h.id}>
                       <TableCell className="text-sm font-medium">{h.fileName}</TableCell>
                       <TableCell><Badge variant="outline" className="text-xs">{h.fileType}</Badge></TableCell>
                       <TableCell className="text-sm">{h.recordsProcessed}</TableCell>
+                      <TableCell className="text-sm"><span className="text-green-600">{h.recordsAdded}</span> / <span className="text-blue-600">{h.recordsUpdated}</span></TableCell>
                       <TableCell className="text-sm">{h.importedBy}</TableCell>
-                      <TableCell className="text-sm">{formatDate(h.createdAt)}</TableCell>
+                      <TableCell className="text-sm whitespace-nowrap">{new Date(h.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</TableCell>
                     </TableRow>
                   ))
                 )}
