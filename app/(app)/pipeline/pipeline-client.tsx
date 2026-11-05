@@ -13,6 +13,48 @@ import { AddActionItemDialog } from '@/components/add-action-item-dialog'
 import { Label } from '@/components/ui/label'
 import { ForecastFilters } from '@/components/forecast-filters'
 import { useSharedFilters, filterParams } from '@/lib/use-shared-filters'
+import { CADENCE_OPTIONS, LEVEL_LABEL, cadenceLabel, type Escalation, type EscalationLevel } from '@/lib/lead-escalation'
+import { toast } from 'sonner'
+
+const ROW_CLASS: Record<EscalationLevel, string> = { none: '', ok: '', due: '', overdue: 'bg-amber-50', escalated: 'bg-red-50' }
+const LEVEL_BADGE: Record<EscalationLevel, string> = {
+  none: 'bg-muted text-muted-foreground',
+  ok: 'bg-green-100 text-green-700',
+  due: 'bg-blue-100 text-blue-700',
+  overdue: 'bg-amber-100 text-amber-800',
+  escalated: 'bg-red-100 text-red-700',
+}
+const formatDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+function formatAge(days: number | null): string {
+  if (days == null) return ''
+  if (days < 60) return `${days} days old`
+  if (days < 365) return `${Math.floor(days / 30)} months old`
+  const y = days / 365
+  return `${y.toFixed(1).replace(/\.0$/, '')} yr${y >= 1.05 ? 's' : ''} old`
+}
+
+function FollowUpCell({ lead, saving, defaultDays, onChange }: { lead: Lead; saving: boolean; defaultDays: number; onChange: (days: number) => void }) {
+  const e = lead.escalation
+  if (!e || e.level === 'none') return <span className="text-xs text-muted-foreground">—</span>
+  const due = e.daysUntilDue ?? 0
+  const dueText = due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`
+  const touch = e.daysSinceTouch != null ? `Last touch ${e.daysSinceTouch}d ago (${e.lastTouchSource})` : 'No activity recorded'
+  return (
+    <div className="space-y-1 min-w-[150px]">
+      <div className="flex items-center gap-1.5" title={touch}>
+        <Badge className={`text-[10px] whitespace-nowrap ${LEVEL_BADGE[e.level]}`}>{LEVEL_LABEL[e.level]}</Badge>
+        <span className="text-xs text-muted-foreground whitespace-nowrap">{dueText}</span>
+      </div>
+      <Select value={e.customCadence ? String(e.cadenceDays) : 'default'} onValueChange={(v) => onChange(v === 'default' ? 0 : Number(v))} disabled={saving}>
+        <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">Default (every {defaultDays} days)</SelectItem>
+          {CADENCE_OPTIONS.map(o => <SelectItem key={o.days} value={String(o.days)}>{o.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
 
 interface Lead {
   id: string; opportunityTitle: string; clientContact: string | null; confidence: number
@@ -23,14 +65,16 @@ interface Lead {
   linkedJob: { id: string; jobCode: string } | null
   email: string | null; phone: string | null; cellPhone: string | null
   noPm: boolean; salespersonName: string | null; missingInfo: string[]
+  escalation: Escalation | null
 }
 
 export function PipelineClient() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [summary, setSummary] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState({ stale: '', status: '' })
+  const [filter, setFilter] = useState({ stale: '', status: '', sort: 'urgent' })
   const [users, setUsers] = useState<any[]>([])
+  const [savingId, setSavingId] = useState<string | null>(null)
   const { f, set, ready } = useSharedFilters()
 
   const loadData = useCallback((isStale: () => boolean = () => false) => {
@@ -39,6 +83,7 @@ export function PipelineClient() {
     if (filter.stale === 'nopm') params.set('noPm', 'true')
     if (filter.stale === 'missing') params.set('missingInfo', 'true')
     if (filter.status) params.set('status', filter.status)
+    params.set('sort', filter.sort)
 
     fetch(`/api/pipeline?${params}`)
       .then((r) => r.json())
@@ -53,6 +98,22 @@ export function PipelineClient() {
     loadData(() => stale)
     return () => { stale = true }
   }, [loadData, ready])
+  const saveCadence = async (leadId: string, cadenceDays: number) => {
+    setSavingId(leadId)
+    try {
+      const res = await fetch('/api/pipeline/follow-up', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ leadId, cadenceDays }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d?.error ?? 'Failed to save')
+      toast.success(cadenceDays ? `Follow-up set: ${cadenceLabel(cadenceDays)}` : 'Follow-up reset to default')
+      loadData()
+    } catch (err: any) {
+      console.error('Save follow-up error:', err)
+      toast.error(err?.message ?? 'Failed to save follow-up timeline')
+    } finally { setSavingId(null) }
+  }
+
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
   }, [])
@@ -76,9 +137,9 @@ export function PipelineClient() {
             <div className="p-2 rounded-lg bg-muted text-blue-600"><ArrowUpDown className="h-4 w-4" /></div>
             <div><p className="text-xs text-muted-foreground">Avg Confidence</p><p className="text-lg font-bold">{formatPercent((summary?.avgConfidence ?? 0) * 100)}</p></div>
           </CardContent></Card>
-          <Card><CardContent className="p-4 flex items-center gap-3">
+          <Card className="cursor-pointer" onClick={() => setFilter(f => ({ ...f, stale: 'true' }))}><CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-muted text-amber-500"><Clock className="h-4 w-4" /></div>
-            <div><p className="text-xs text-muted-foreground">Stale Leads</p><p className="text-lg font-bold">{summary?.staleCount ?? 0}</p></div>
+            <div><p className="text-xs text-muted-foreground">Follow-ups Overdue</p><p className="text-lg font-bold">{summary?.staleCount ?? 0}{summary?.escalatedCount ? <span className="ml-2 text-xs font-medium text-red-600">{summary.escalatedCount} escalated</span> : null}</p></div>
           </CardContent></Card>
           <Card className="cursor-pointer" onClick={() => setFilter(f => ({ ...f, stale: 'nopm' }))}><CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-muted text-red-600"><UserX className="h-4 w-4" /></div>
@@ -101,18 +162,31 @@ export function PipelineClient() {
           pmLabel="Salesperson / PM"
           storageKey="irp_pipeline_filters_open"
           extra={
-            <div className="space-y-1.5">
-              <Label className="text-xs">Show</Label>
-              <Select value={filter.stale || 'all'} onValueChange={(v) => setFilter(prev => ({ ...prev, stale: v === 'all' ? '' : v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Leads</SelectItem>
-                  <SelectItem value="true">Stale Only</SelectItem>
-                  <SelectItem value="nopm">No PM Assigned</SelectItem>
-                  <SelectItem value="missing">Missing Info</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Show</Label>
+                <Select value={filter.stale || 'all'} onValueChange={(v) => setFilter(prev => ({ ...prev, stale: v === 'all' ? '' : v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Leads</SelectItem>
+                    <SelectItem value="true">Follow-ups overdue</SelectItem>
+                    <SelectItem value="nopm">No PM Assigned</SelectItem>
+                    <SelectItem value="missing">Missing Info</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Sort</Label>
+                <Select value={filter.sort} onValueChange={(v) => setFilter(prev => ({ ...prev, sort: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="urgent">Most urgent follow-up</SelectItem>
+                    <SelectItem value="newest">Newest first</SelectItem>
+                    <SelectItem value="oldest">Oldest first</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
           }
         />
       </FadeIn>
@@ -126,6 +200,8 @@ export function PipelineClient() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Opportunity</TableHead>
+                    <TableHead>Created / Age</TableHead>
+                    <TableHead>Follow-up</TableHead>
                     <TableHead>Assigned</TableHead>
                     <TableHead className="text-right">Est. Revenue</TableHead>
                     <TableHead className="text-right">Confidence</TableHead>
@@ -137,19 +213,18 @@ export function PipelineClient() {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
                   ) : leads.length === 0 ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No leads found. Import a BuilderTrend Leads export to get started.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No leads found. Import a BuilderTrend Leads export to get started.</TableCell></TableRow>
                   ) : (
                     leads.map((lead) => (
-                      <TableRow key={lead.id} className={lead.isStale ? 'bg-amber-50' : ''}>
+                      <TableRow key={lead.id} className={ROW_CLASS[lead.escalation?.level ?? 'none']}>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <div>
                               <p className="text-sm font-medium max-w-[250px] truncate">{lead.opportunityTitle}</p>
                               <p className="text-xs text-muted-foreground">{lead.clientContact ?? '—'}</p>
                             </div>
-                            {lead.isStale && <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px]">Stale</Badge>}
                             {(lead.missingInfo?.length ?? 0) > 0 ? (
                               <Badge className="text-[10px] bg-amber-100 text-amber-800 whitespace-nowrap" title={`Missing: ${lead.missingInfo.join(', ')}`}>Missing info</Badge>
                             ) : !lead.email && !lead.phone && !lead.cellPhone && (
@@ -157,12 +232,19 @@ export function PipelineClient() {
                             )}
                           </div>
                         </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          <p>{lead.createdDate ? formatDay(lead.createdDate) : '—'}</p>
+                          <p className="text-xs text-muted-foreground">{formatAge(lead.escalation?.ageDays ?? null)}</p>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <FollowUpCell lead={lead} saving={savingId === lead.id} defaultDays={summary?.defaultFollowUpDays ?? 30} onChange={(d) => saveCadence(lead.id, d)} />
+                        </TableCell>
                         <TableCell className="text-sm">
                           {lead.noPm ? (
                             <Badge className="text-[10px] bg-red-100 text-red-700" title={lead.salespersonName ? `BuilderTrend: ${lead.salespersonName} (not matched to a user) — fix in BuilderTrend` : 'No salesperson in BuilderTrend — fix in BuilderTrend'}>No PM</Badge>
                           ) : (lead.salesperson?.name ?? '—')}
                         </TableCell>
-                        <TableCell className="text-right text-sm">
+                        <TableCell className="text-right text-sm whitespace-nowrap">
                           {formatCurrency(lead.estimatedRevMin)} – {formatCurrency(lead.estimatedRevMax)}
                         </TableCell>
                         <TableCell className="text-right text-sm">{formatPercent(lead.confidence * 100)}</TableCell>
@@ -180,6 +262,7 @@ export function PipelineClient() {
                             users={users}
                             defaultAssigneeId={lead.salesperson?.id}
                             defaultDescription={`Follow up: ${lead.opportunityTitle}`}
+                            onCreated={() => loadData()}
                           />
                         </TableCell>
                       </TableRow>

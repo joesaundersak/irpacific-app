@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db'
 import { isOpenLead } from '@/lib/schedule-rules'
 import { leadMissingInfo } from '@/lib/missing-info'
 import { parseFilters, leadWhere, leadMatches, leadConfidencePct } from '@/lib/shared-filters'
+import { loadEscalations } from '@/lib/lead-escalation-server'
+import { needsFollowUp } from '@/lib/lead-escalation'
 
 export async function GET(request: Request) {
   try {
@@ -17,10 +19,10 @@ export async function GET(request: Request) {
     const status = url.searchParams.get('status') ?? undefined
     const noPmOnly = url.searchParams.get('noPm') === 'true'
     const missingOnly = url.searchParams.get('missingInfo') === 'true'
+    const sort = url.searchParams.get('sort') ?? 'urgent'
 
     const where: any = { ...leadWhere(filters) }
     if (noPmOnly) where.salespersonId = null
-    if (staleOnly) where.isStale = true
     if (status) where.proposalStatus = { contains: status }
 
     const allLeads = await prisma.lead.findMany({
@@ -36,7 +38,15 @@ export async function GET(request: Request) {
 
     const noPm = (l: any) => !l.salespersonId && isOpenLead(l)
     const missingInfo = (l: any) => (isOpenLead(l) ? leadMissingInfo(l) : [])
-    const shown = leads.filter((l: any) => (!noPmOnly || noPm(l)) && (!missingOnly || missingInfo(l).length > 0))
+    const esc = await loadEscalations(leads)
+    const overdue = (l: any) => needsFollowUp(esc[l.id])
+    const created = (l: any) => (l.createdDate ?? l.createdAt)?.getTime() ?? 0
+    const shown = leads
+      .filter((l: any) => (!noPmOnly || noPm(l)) && (!missingOnly || missingInfo(l).length > 0) && (!staleOnly || overdue(l)))
+      .sort((a: any, b: any) =>
+        sort === 'newest' ? created(b) - created(a)
+        : sort === 'oldest' ? created(a) - created(b)
+        : (esc[b.id]?.score ?? 0) - (esc[a.id]?.score ?? 0))
     const totalWeighted = leads.reduce((s: number, l: any) => s + (l.weightedValue ?? 0), 0)
     const avgConfidence = leads.length > 0
       ? leads.reduce((s: number, l: any) => s + leadConfidencePct(l) / 100, 0) / leads.length
@@ -47,6 +57,7 @@ export async function GET(request: Request) {
         ...l,
         noPm: noPm(l),
         missingInfo: missingInfo(l),
+        escalation: esc[l.id] ?? null,
         createdAt: l.createdAt?.toISOString(),
         updatedAt: l.updatedAt?.toISOString(),
         createdDate: l.createdDate?.toISOString() ?? null,
@@ -61,7 +72,9 @@ export async function GET(request: Request) {
         totalLeads: leads.length,
         weightedPipeline: totalWeighted,
         avgConfidence,
-        staleCount: leads.filter((l: any) => l.isStale).length,
+        staleCount: leads.filter(overdue).length,
+        defaultFollowUpDays: Math.max(1, parseInt((await prisma.systemConfig.findUnique({ where: { key: 'stale_lead_days' } }))?.value ?? '30', 10) || 30),
+        escalatedCount: leads.filter((l: any) => esc[l.id]?.level === 'escalated').length,
         noPmCount: leads.filter(noPm).length,
         missingInfoCount: leads.filter((l: any) => missingInfo(l).length > 0).length,
       },

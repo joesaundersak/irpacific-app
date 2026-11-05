@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { parseFilters, leadWhere, leadMatches, jobWhere, jobMatchesType } from '@/lib/shared-filters'
+import { loadEscalations } from '@/lib/lead-escalation-server'
+import { needsFollowUp } from '@/lib/lead-escalation'
 
 export async function GET(request: Request) {
   try {
@@ -18,11 +20,16 @@ export async function GET(request: Request) {
     // Weighted pipeline
     const allLeads = await prisma.lead.findMany({
       where: { leadStatus: { not: 'Closed' }, ...leadWhere(filters) },
-      select: { weightedValue: true, isStale: true, salespersonId: true, confidence: true, opportunityTitle: true, tags: true },
+      select: {
+        id: true, weightedValue: true, salespersonId: true, confidence: true, opportunityTitle: true, tags: true,
+        leadStatus: true, linkedJobId: true, soldDate: true, createdDate: true, createdAt: true, lastContacted: true,
+      },
     })
     const leads = allLeads.filter((l: any) => leadMatches(l, filters))
     const weightedPipeline = leads.reduce((sum: number, l: any) => sum + (l.weightedValue ?? 0), 0)
-    const staleLeads = leads.filter((l: any) => l.isStale).length
+    // Follow-ups overdue: respects each lead's follow-up timeline and the last action item activity
+    const esc = await loadEscalations(leads)
+    const staleLeads = leads.filter((l: any) => needsFollowUp(esc[l.id])).length
 
     // Open jobs matching the filters (active projects + at-risk)
     const allJobs = (await prisma.job.findMany({

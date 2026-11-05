@@ -20,6 +20,7 @@ export async function POST(request: Request) {
       prisma.milestone.deleteMany({}),
       prisma.aPEntry.deleteMany({}),
       prisma.meeting.deleteMany({}),
+      prisma.leadFollowUp.deleteMany({}),
       prisma.lead.deleteMany({}),
       prisma.job.deleteMany({}),
       prisma.importHistory.deleteMany({}),

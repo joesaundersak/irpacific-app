@@ -165,6 +165,7 @@ model Lead {
   linkedJobId       String?
   linkedJob         Job?      @relation("LinkedJob", fields: [linkedJobId], references: [id])
   actionItems       ActionItem[] @relation("LeadActionItems")
+  followUp          LeadFollowUp?
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -173,6 +174,17 @@ model Lead {
   @@index([linkedJobId])
   @@index([isStale])
   @@index([leadStatus])
+}
+
+// App-owned follow-up cadence per lead (BuilderTrend lead data itself stays read-only)
+model LeadFollowUp {
+  id           String   @id @default(cuid())
+  leadId       String   @unique
+  lead         Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  cadenceDays  Int
+  updatedById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model Milestone {

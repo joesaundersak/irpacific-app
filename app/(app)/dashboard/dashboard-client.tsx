@@ -68,7 +68,7 @@ export function DashboardClient() {
     { label: `Weighted Pipeline${f.minConfidence !== '0' ? ` (≥${f.minConfidence}%)` : ''}`, value: formatCurrency(data?.weightedPipeline), icon: TrendingUp, color: 'text-primary', href: '/pipeline' },
     { label: 'Active Projects', value: String(data?.activeProjects ?? 0), icon: FolderKanban, color: 'text-blue-600' },
     { label: 'At-Risk Jobs', value: String(data?.atRiskCount ?? 0), icon: AlertTriangle, color: data?.atRiskCount ? 'text-red-500' : 'text-green-600' },
-    { label: 'Stale Leads', value: String(data?.staleLeads ?? 0), icon: Clock, color: data?.staleLeads ? 'text-amber-500' : 'text-green-600' },
+    { label: 'Follow-ups Overdue', value: String(data?.staleLeads ?? 0), icon: Clock, color: data?.staleLeads ? 'text-amber-500' : 'text-green-600', href: '/pipeline' },
     { label: 'Open Actions', value: String((data?.actionsByPerson ?? []).reduce((s: number, a: any) => s + a.count, 0)), icon: Users, color: 'text-purple-600', href: '/action-items' },
     { label: 'Missing Schedules', value: String(data?.missingScheduleCount ?? 0), icon: CalendarX, color: data?.missingScheduleCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=missing_schedule' },
     { label: 'No PM Assigned', value: String(data?.noPmCount ?? 0), icon: UserX, color: data?.noPmCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=no_pm' },
@@ -89,6 +89,9 @@ export function DashboardClient() {
           <span>No imports yet</span>
         )}
       </p>
+      <FadeIn>
+        <ForecastFilters f={f} set={set} users={users} fields={['minConfidence', 'state', 'pm', 'type']} storageKey="irp_dashboard_filters_open" />
+      </FadeIn>
       <FadeIn>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {kpis.map((kpi: any, i) => (
@@ -201,10 +204,6 @@ export function DashboardClient() {
           </Card>
         </FadeIn>
       </div>
-
-      <FadeIn delay={0.4}>
-        <ForecastFilters f={f} set={set} users={users} fields={['minConfidence', 'state', 'pm', 'type']} storageKey="irp_dashboard_filters_open" />
-      </FadeIn>
     </div>
   )
 }

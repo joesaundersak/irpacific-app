@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { safeSyncFlags, FLAG_SOURCE } from '@/lib/flags'
+import { loadEscalations } from '@/lib/lead-escalation-server'
+import { needsFollowUp, cadenceLabel } from '@/lib/lead-escalation'
 
 export async function GET() {
   try {
@@ -89,18 +91,16 @@ export async function POST(request: Request) {
 }
 
 async function generateAutoActionItems(meetingId: string) {
-  const staleDaysConfig = await prisma.systemConfig.findUnique({ where: { key: 'stale_lead_days' } })
-  const staleDays = parseInt(staleDaysConfig?.value ?? '30', 10)
   const targetMarginConfig = await prisma.systemConfig.findUnique({ where: { key: 'target_margin' } })
   const targetMargin = parseFloat(targetMarginConfig?.value ?? '25')
 
-  // 1. Stale leads
-  const staleLeads = await prisma.lead.findMany({
-    where: { isStale: true, leadStatus: { not: 'Closed' } },
-    include: { salesperson: true },
-  })
+  // 1. Lead follow-ups overdue (uses each lead's follow-up timeline + last action item activity)
+  const openLeads = await prisma.lead.findMany({ where: { leadStatus: { not: 'Closed' } } })
+  const esc = await loadEscalations(openLeads)
+  const staleLeads = openLeads.filter((l: any) => needsFollowUp(esc[l.id]))
   for (const lead of staleLeads) {
-    const desc = `Follow up on stale lead: ${lead.opportunityTitle} (no activity > ${staleDays} days)`
+    const e = esc[lead.id]
+    const desc = `Follow up on lead: ${lead.opportunityTitle} (${e.daysSinceTouch ?? '?'} days since last touch; timeline ${cadenceLabel(e.cadenceDays).toLowerCase()})`
     const existing = await prisma.actionItem.findFirst({ where: { description: desc, status: 'open', meetingId } })
     if (!existing) {
       await prisma.actionItem.create({
@@ -111,7 +111,7 @@ async function generateAutoActionItems(meetingId: string) {
           source: 'auto',
           meetingId,
           leadId: lead.id,
-          priority: 'medium',
+          priority: e.level === 'escalated' ? 'high' : 'medium',
         },
       })
     }
