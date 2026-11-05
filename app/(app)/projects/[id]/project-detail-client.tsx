@@ -6,21 +6,16 @@ import { PageHeader } from '@/components/layouts/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
-import { Switch } from '@/components/ui/switch'
-import { DollarSign, Calendar, User, AlertTriangle, CheckCircle, Clock, ArrowLeft, Plus } from 'lucide-react'
-import { formatCurrency, formatCurrencyFull, formatPercent, formatDate } from '@/lib/format'
-import { FadeIn } from '@/components/ui/animate'
-import { toast } from 'sonner'
-import { useSession } from 'next-auth/react'
+import { DollarSign, Calendar, User, AlertTriangle, CheckCircle, Clock, ArrowLeft } from 'lucide-react'
+import { formatCurrencyFull, formatPercent, formatDate } from '@/lib/format'
 import { ScheduleRequirements } from './schedule-requirements'
+import { AddActionItemDialog } from '@/components/add-action-item-dialog'
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const [job, setJob] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const { data: session } = useSession() || {}
   const [users, setUsers] = useState<any[]>([])
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
@@ -36,44 +31,32 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
   useEffect(() => { loadJob() }, [projectId])
 
-  const updateMilestone = async (milestoneId: string, data: any) => {
-    try {
-      const res = await fetch(`/api/projects/${projectId}/milestones`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ milestoneId, ...data }),
-      })
-      if (res.ok) { toast.success('Milestone updated'); loadJob() }
-      else toast.error('Failed to update')
-    } catch { toast.error('Error') }
-  }
-
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground">Loading project...</div>
   if (!job) return <div className="flex items-center justify-center py-20 text-muted-foreground">Project not found</div>
 
   const marginColor = job.marginHealth === 'green' ? 'text-green-600' : job.marginHealth === 'yellow' ? 'text-amber-600' : 'text-red-600'
   const costVariance = (job.projectedCosts ?? 0) - (job.actualCosts ?? 0)
-  const role = session?.user?.role
-  const canManage = role === 'Admin' || role === 'Office Manager'
-  const canEdit = canManage || job.projectManagerId === session?.user?.id
   const scheduleIncomplete = job.isActive && job.scheduleEval && !job.scheduleEval.complete
   const noPm = job.isActive && !job.projectManagerId
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link href="/projects"><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
-        <PageHeader
-          title={`${job.jobCode} — ${job.clientName ?? job.jobName}`}
-          description={`${job.state ?? ''} • ${job.jobType ?? 'General'} • PM: ${job.projectManager?.name ?? 'Unassigned'}`}
-        />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Link href="/projects"><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
+          <PageHeader
+            title={`${job.jobCode} — ${job.clientName ?? job.jobName}`}
+            description={`${job.state ?? ''} • ${job.jobType ?? 'General'} • PM: ${job.projectManager?.name ?? 'Unassigned'}`}
+          />
+        </div>
+        <AddActionItemDialog jobId={job.id} users={users} defaultAssigneeId={job.projectManagerId} defaultDescription={`${job.jobCode}: `} label="Add Action Item" />
       </div>
 
       {(scheduleIncomplete || noPm) && (
         <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 flex flex-wrap items-center gap-x-4 gap-y-1">
           <AlertTriangle className="h-4 w-4" />
-          {noPm && <span><strong>No project manager assigned.</strong></span>}
-          {scheduleIncomplete && <span><strong>Schedule incomplete:</strong> {job.scheduleEval.missing.join(', ')} — see the Schedule tab. Excluded from the forecast until a schedule is entered.</span>}
+          {noPm && <span><strong>No project manager assigned in BuilderTrend.</strong></span>}
+          {scheduleIncomplete && <span><strong>Schedule incomplete in BuilderTrend:</strong> {job.scheduleEval.missing.join(', ')} — see the Schedule tab. Excluded from the forecast until the dates are added in BuilderTrend and re-imported.</span>}
         </div>
       )}
 
@@ -86,7 +69,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
         {/* Financial Tab */}
         <TabsContent value="financial">
-          <FadeIn>
+          <div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Contract Summary</CardTitle></CardHeader>
@@ -124,22 +107,22 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
                 </CardContent>
               </Card>
             </div>
-          </FadeIn>
+          </div>
         </TabsContent>
 
         {/* Schedule Tab */}
         <TabsContent value="schedule">
-          <FadeIn className="space-y-4">
-            <ScheduleRequirements job={job} canEdit={canEdit} canManage={canManage} users={users} onChange={loadJob} />
+          <div className="space-y-4">
+            <ScheduleRequirements job={job} />
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium">Milestones & Schedule</CardTitle>
+                  <CardTitle className="text-sm font-medium">Milestones & Schedule <span className="text-xs font-normal text-muted-foreground">(from BuilderTrend)</span></CardTitle>
                 </div>
               </CardHeader>
               <CardContent>
                 {(job.milestones?.length ?? 0) === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No milestones yet. Import a Schedule export or add milestones manually.</p>
+                  <p className="text-sm text-muted-foreground text-center py-6">No schedule items in BuilderTrend yet. Add them in BuilderTrend and re-import the Schedule export.</p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -149,7 +132,6 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
                         <TableHead>Start</TableHead>
                         <TableHead>End</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Complete</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -176,13 +158,6 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
                                 <Badge variant="secondary" className="text-xs">Pending</Badge>
                               )}
                             </TableCell>
-                            <TableCell>
-                              <Switch
-                                checked={ms.isComplete}
-                                onCheckedChange={(checked) => updateMilestone(ms.id, { isComplete: checked })}
-                                disabled={session?.user?.role === 'PM' && job.projectManagerId !== session?.user?.id}
-                              />
-                            </TableCell>
                           </TableRow>
                         )
                       })}
@@ -191,12 +166,12 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
                 )}
               </CardContent>
             </Card>
-          </FadeIn>
+          </div>
         </TabsContent>
 
         {/* Contact Tab */}
         <TabsContent value="contact">
-          <FadeIn>
+          <div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Card>
                 <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">Client Information</CardTitle></CardHeader>
@@ -221,7 +196,7 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
                 </CardContent>
               </Card>
             </div>
-          </FadeIn>
+          </div>
         </TabsContent>
       </Tabs>
     </div>

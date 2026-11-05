@@ -32,6 +32,9 @@ export async function GET(request: Request) {
     const months = total.months
     const projRow = new Array(monthsCount).fill(0)
     const leadRow = new Array(monthsCount).fill(0)
+    const profitRow = new Array(monthsCount).fill(0)
+    const targetMarginPct = parseFloat(configMap.forecast_target_margin || configMap.target_margin || '25') || 0
+    const revenueTarget = parseFloat(configMap.forecast_target_revenue_monthly || '0') || 0
     let beyondProjects = 0, beyondLeads = 0
 
     // ---------- Projects: active jobs WITH a schedule only ----------
@@ -82,7 +85,9 @@ export async function GET(request: Request) {
       } else {
         forecastInstall(b, model, { contract, billed, start, end: endDate, schedule: ev })
       }
-      b.values.forEach((v, i) => { projRow[i] += v })
+      // Projected profit uses the job's BuilderTrend projected margin; falls back to the target margin when BT has none
+      const jobMargin = (job.projectedProfitPct ?? 0) > 0 ? job.projectedProfitPct : targetMarginPct
+      b.values.forEach((v, i) => { projRow[i] += v; profitRow[i] += v * jobMargin / 100 })
       beyondProjects += b.beyond
       projects.push({
         id: job.id, jobCode: job.jobCode, name: job.jobName, type: ev.type,
@@ -115,7 +120,7 @@ export async function GET(request: Request) {
         let end: Date = lead.substantialCompletion && lead.substantialCompletion > start ? lead.substantialCompletion : addDays(start, defaultDurationDays(mid))
         const b = new MonthBuckets(now, monthsCount)
         forecastInstall(b, model, { contract: value, billed: 0, start, end })
-        b.values.forEach((v, i) => { leadRow[i] += v })
+        b.values.forEach((v, i) => { leadRow[i] += v; profitRow[i] += v * targetMarginPct / 100 })
         beyondLeads += b.beyond
         leadsOut.push({
           id: lead.id, title: lead.opportunityTitle, confidence: r(conf * 100),
@@ -128,6 +133,7 @@ export async function GET(request: Request) {
 
     const rows = months.map((month, i) => ({
       month, projects: r(projRow[i]), leads: r(leadRow[i]), total: r(projRow[i] + leadRow[i]),
+      profit: r(profitRow[i]), revenueTarget: r(revenueTarget), profitTarget: r(revenueTarget * targetMarginPct / 100),
     }))
 
     projects.sort((a, b) => b.remaining - a.remaining)
@@ -144,7 +150,9 @@ export async function GET(request: Request) {
       totals: {
         projects: r(projRow.reduce((s, v) => s + v, 0)),
         leads: r(leadRow.reduce((s, v) => s + v, 0)),
+        profit: r(profitRow.reduce((s, v) => s + v, 0)),
       },
+      targets: { revenueMonthly: r(revenueTarget), marginPct: targetMarginPct },
       model: { phases: model.phases.map(p => ({ label: p.label, bill: Math.round(p.bill * 100), time: Math.round(p.time * 100) })), productDeposit: Math.round(model.productDeposit * 100) },
     })
   } catch (error: any) {

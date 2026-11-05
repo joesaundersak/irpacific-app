@@ -10,9 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { BarChart3, Filter, AlertTriangle, Info } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { BarChart3, Filter, AlertTriangle, Info, Target } from 'lucide-react'
 import { formatCurrency } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
+import { useSession } from 'next-auth/react'
+import { toast } from 'sonner'
 
 const ForecastChart = dynamic(() => import('./forecast-chart'), { ssr: false, loading: () => <div className="h-[400px] flex items-center justify-center text-muted-foreground">Loading chart...</div> })
 
@@ -24,6 +28,10 @@ export function ForecastClient() {
   const [loading, setLoading] = useState(true)
   const [users, setUsers] = useState<any[]>([])
   const [f, setF] = useState({ includeLeads: false, minConfidence: '60', state: 'all', pm: 'all', type: 'all', months: '12' })
+  const [targetForm, setTargetForm] = useState({ revenue: '', margin: '25' })
+  const [savingTargets, setSavingTargets] = useState(false)
+  const { data: session } = useSession() || {}
+  const isAdmin = session?.user?.role === 'Admin'
 
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
@@ -49,6 +57,34 @@ export function ForecastClient() {
   const months: string[] = data?.months ?? []
   const showLeads = f.includeLeads
   const set = (k: keyof typeof f, v: any) => setF(prev => ({ ...prev, [k]: v }))
+
+  const revenueTarget: number = data?.targets?.revenueMonthly ?? 0
+  const targetMargin: number = data?.targets?.marginPct ?? 25
+  const hasRevTarget = revenueTarget > 0
+  const forecastTotal = (data?.totals?.projects ?? 0) + (showLeads ? data?.totals?.leads ?? 0 : 0)
+  const profitTotal: number = data?.totals?.profit ?? 0
+  const projMargin = forecastTotal > 0 ? (profitTotal / forecastTotal) * 100 : 0
+  const revTargetTotal = revenueTarget * rows.length
+  const profitTargetTotal = revTargetTotal * targetMargin / 100
+  const monthsOnTarget = rows.filter(r => r.total >= revenueTarget).length
+
+  useEffect(() => {
+    if (data?.targets) setTargetForm({ revenue: data.targets.revenueMonthly ? String(data.targets.revenueMonthly) : '', margin: String(data.targets.marginPct ?? 25) })
+  }, [data?.targets?.revenueMonthly, data?.targets?.marginPct])
+
+  const saveTargets = async () => {
+    const rev = parseFloat(targetForm.revenue || '0')
+    const mar = parseFloat(targetForm.margin || '0')
+    if (isNaN(rev) || rev < 0 || isNaN(mar) || mar < 0 || mar > 100) { toast.error('Enter a valid revenue target and a margin between 0 and 100'); return }
+    setSavingTargets(true)
+    try {
+      const res = await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ forecast_target_revenue_monthly: String(rev), forecast_target_margin: String(mar) }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(d.error ?? 'Failed to save targets'); return }
+      toast.success('Targets saved')
+      setF(prev => ({ ...prev }))
+    } catch { toast.error('Failed to save targets') } finally { setSavingTargets(false) }
+  }
 
   return (
     <div className="space-y-6">
@@ -143,6 +179,50 @@ export function ForecastClient() {
 
       <FadeIn>
         <Card>
+          <CardContent className="p-4 space-y-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex items-center gap-2 text-sm font-medium mr-2"><Target className="h-4 w-4 text-primary" />Targets</div>
+              <div className="space-y-1">
+                <Label className="text-xs">Monthly revenue target ($)</Label>
+                <Input type="number" min="0" step="1000" className="h-9 w-[170px]" value={targetForm.revenue} onChange={(e) => setTargetForm(t => ({ ...t, revenue: e.target.value }))} disabled={!isAdmin} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Target profit margin (%)</Label>
+                <Input type="number" min="0" max="100" step="0.5" className="h-9 w-[150px]" value={targetForm.margin} onChange={(e) => setTargetForm(t => ({ ...t, margin: e.target.value }))} disabled={!isAdmin} />
+              </div>
+              {isAdmin ? (
+                <Button size="sm" onClick={saveTargets} disabled={savingTargets}>{savingTargets ? 'Saving…' : 'Save Targets'}</Button>
+              ) : <p className="text-xs text-muted-foreground">Only an Admin can change targets.</p>}
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">Revenue vs Target ({f.months} mo)</p>
+                <p className={`text-lg font-bold ${hasRevTarget ? (forecastTotal >= revTargetTotal ? 'text-green-600' : 'text-red-600') : ''}`}>{hasRevTarget ? `${Math.round((forecastTotal / revTargetTotal) * 100)}%` : '—'}</p>
+                <p className="text-xs text-muted-foreground">{hasRevTarget ? `${formatCurrency(forecastTotal)} of ${formatCurrency(revTargetTotal)}` : 'Set a monthly revenue target'}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">Projected Profit</p>
+                <p className="text-lg font-bold">{formatCurrency(profitTotal)}</p>
+                <p className={`text-xs ${forecastTotal > 0 && projMargin < targetMargin ? 'text-red-600' : 'text-muted-foreground'}`}>{forecastTotal > 0 ? `${projMargin.toFixed(1)}% margin (target ${targetMargin}%)` : 'No forecast revenue'}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">Profit vs Target ({f.months} mo)</p>
+                <p className={`text-lg font-bold ${hasRevTarget ? (profitTotal >= profitTargetTotal ? 'text-green-600' : 'text-red-600') : ''}`}>{hasRevTarget ? `${Math.round((profitTotal / Math.max(1, profitTargetTotal)) * 100)}%` : '—'}</p>
+                <p className="text-xs text-muted-foreground">{hasRevTarget ? `${formatCurrency(profitTotal)} of ${formatCurrency(profitTargetTotal)}` : 'Needs a revenue target'}</p>
+              </div>
+              <div className="rounded-lg bg-muted/50 p-3">
+                <p className="text-xs text-muted-foreground">Months at/above Target</p>
+                <p className="text-lg font-bold">{hasRevTarget ? `${monthsOnTarget} / ${rows.length}` : '—'}</p>
+                <p className="text-xs text-muted-foreground">{hasRevTarget ? `Target ${formatCurrency(revenueTarget)}/mo` : 'Set a monthly revenue target'}</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Projected profit uses each project’s projected margin from BuilderTrend (WIP); projects without one, and leads, use the target margin.</p>
+          </CardContent>
+        </Card>
+      </FadeIn>
+
+      <FadeIn>
+        <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-primary" />{f.months}-Month Billing Forecast
@@ -152,9 +232,9 @@ export function ForecastClient() {
             {loading && !data ? (
               <div className="h-[400px] flex items-center justify-center text-muted-foreground">Loading forecast...</div>
             ) : rows.every(r => r.total === 0) ? (
-              <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm text-center px-6">No forecast revenue for these filters. Only projects with schedule dates are forecast — add phase dates on the project pages, or include leads.</div>
+              <div className="h-[400px] flex items-center justify-center text-muted-foreground text-sm text-center px-6">No forecast revenue for these filters. Only projects with schedule dates are forecast — enter the schedule in BuilderTrend and re-import, or include leads.</div>
             ) : (
-              <ForecastChart data={rows} showLeads={showLeads} />
+              <ForecastChart data={rows} showLeads={showLeads} showTarget={hasRevTarget} />
             )}
             {data?.model && (
               <p className="text-xs text-muted-foreground flex items-start gap-1.5 mt-3">
@@ -179,24 +259,39 @@ export function ForecastClient() {
                     <TableHead>Month</TableHead>
                     <TableHead className="text-right">Scheduled Projects</TableHead>
                     {showLeads && <TableHead className="text-right">Weighted Leads</TableHead>}
-                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Total Revenue</TableHead>
+                    {hasRevTarget && <TableHead className="text-right">Revenue Target</TableHead>}
+                    {hasRevTarget && <TableHead className="text-right">vs Target</TableHead>}
+                    <TableHead className="text-right">Projected Profit</TableHead>
+                    <TableHead className="text-right">Margin</TableHead>
+                    {hasRevTarget && <TableHead className="text-right">Profit Target</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row: any) => (
-                    <TableRow key={row.month}>
-                      <TableCell className="font-medium text-sm">{formatMonth(row.month)}</TableCell>
-                      <TableCell className="text-right text-sm">{formatCurrency(row.projects)}</TableCell>
-                      {showLeads && <TableCell className="text-right text-sm">{formatCurrency(row.leads)}</TableCell>}
-                      <TableCell className="text-right text-sm font-medium">{formatCurrency(row.total)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {rows.map((row: any) => {
+                    const diff = row.total - (row.revenueTarget ?? 0)
+                    const m = row.total > 0 ? (row.profit / row.total) * 100 : 0
+                    return (
+                      <TableRow key={row.month}>
+                        <TableCell className="font-medium text-sm">{formatMonth(row.month)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatCurrency(row.projects)}</TableCell>
+                        {showLeads && <TableCell className="text-right text-sm">{formatCurrency(row.leads)}</TableCell>}
+                        <TableCell className="text-right text-sm font-medium">{formatCurrency(row.total)}</TableCell>
+                        {hasRevTarget && <TableCell className="text-right text-sm text-muted-foreground">{formatCurrency(row.revenueTarget)}</TableCell>}
+                        {hasRevTarget && <TableCell className={`text-right text-sm font-medium ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>{diff >= 0 ? '+' : '−'}{formatCurrency(Math.abs(diff))}</TableCell>}
+                        <TableCell className="text-right text-sm">{formatCurrency(row.profit)}</TableCell>
+                        <TableCell className={`text-right text-sm ${row.total > 0 && m < targetMargin ? 'text-red-600' : ''}`}>{row.total > 0 ? `${m.toFixed(1)}%` : '—'}</TableCell>
+                        {hasRevTarget && <TableCell className="text-right text-sm text-muted-foreground">{formatCurrency(row.profitTarget)}</TableCell>}
+                      </TableRow>
+                    )
+                  })}
                   {(data?.beyond?.projects > 0 || (showLeads && data?.beyond?.leads > 0)) && (
                     <TableRow>
                       <TableCell className="text-sm text-muted-foreground">Beyond horizon</TableCell>
                       <TableCell className="text-right text-sm text-muted-foreground">{formatCurrency(data.beyond.projects)}</TableCell>
                       {showLeads && <TableCell className="text-right text-sm text-muted-foreground">{formatCurrency(data.beyond.leads)}</TableCell>}
                       <TableCell className="text-right text-sm text-muted-foreground">{formatCurrency(data.beyond.projects + (showLeads ? data.beyond.leads : 0))}</TableCell>
+                      <TableCell colSpan={hasRevTarget ? 5 : 2} />
                     </TableRow>
                   )}
                 </TableBody>

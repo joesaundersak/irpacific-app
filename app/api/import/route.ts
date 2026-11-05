@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { getCurrentUser } from '@/lib/access-server'
 import { safeSyncFlags } from '@/lib/flags'
 import { detectFileType, extractJobCode, resolveJobCode, isPlaceholderJobCode, parseExcelBuffer, parseExcelDate, parseAmount, parsePercentage } from '@/lib/import-parser'
 
@@ -31,9 +32,9 @@ export async function POST(request: Request) {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const role = session.user.role
-    if (role !== 'Admin' && role !== 'Office Manager') {
-      return NextResponse.json({ error: 'Only Admin and Office Manager can import files' }, { status: 403 })
+    const me = await getCurrentUser()
+    if (!me?.access.imports) {
+      return NextResponse.json({ error: 'You do not have access to import files' }, { status: 403 })
     }
 
     const formData = await request.formData()
@@ -262,8 +263,8 @@ async function processSchedule(rows: Record<string, any>[]) {
           where: { jobId: job.id, title, vendorName: assignedTo, dueDate: startDate },
         })
         if (existingAp) {
-          // Keep an in-app "paid" mark even if BuilderTrend hasn't caught up
-          await prisma.aPEntry.update({ where: { id: existingAp.id }, data: { amount, isPaid: existingAp.isPaid || isComplete } })
+          // BuilderTrend is the source of truth for paid status
+          await prisma.aPEntry.update({ where: { id: existingAp.id }, data: { amount, isPaid: isComplete } })
           r.updated++
         } else {
           await prisma.aPEntry.create({

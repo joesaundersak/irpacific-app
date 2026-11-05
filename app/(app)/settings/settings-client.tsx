@@ -10,19 +10,24 @@ import { Settings, Save, LineChart } from 'lucide-react'
 import { INSTALL_PHASES, FORECAST_CONFIG_KEYS } from '@/lib/schedule-rules'
 import { FadeIn } from '@/components/ui/animate'
 import { toast } from 'sonner'
+import { UsersManager } from './users-manager'
+import { EmailTestCard, ResetCard } from './system-tools'
 
-export function SettingsClient() {
+interface Props { canConfig: boolean; canUsers: boolean; isAdmin: boolean; currentUserId: string }
+
+export function SettingsClient({ canConfig, canUsers, isAdmin, currentUserId }: Props) {
   const [config, setConfig] = useState<Record<string, string>>({})
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(canConfig)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    if (!canConfig) return
     fetch('/api/settings')
       .then(r => r.json())
       .then(setConfig)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [canConfig])
 
   const handleSave = async () => {
     setSaving(true)
@@ -46,7 +51,9 @@ export function SettingsClient() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Settings" description="Configure system-wide parameters" />
+      <PageHeader title="Settings" description="Users, access and system-wide parameters" />
+      {canUsers && <FadeIn><UsersManager currentUserId={currentUserId} /></FadeIn>}
+      {canConfig && (<>
       <FadeIn>
         <Card className="max-w-xl">
           <CardHeader><CardTitle className="text-sm font-medium flex items-center gap-2"><Settings className="h-4 w-4 text-primary" />System Configuration</CardTitle></CardHeader>
@@ -108,6 +115,9 @@ export function SettingsClient() {
           </CardContent>
         </Card>
       </FadeIn>
+      <FadeIn><EmailTestCard /></FadeIn>
+      </>)}
+      {isAdmin && <FadeIn><ResetCard /></FadeIn>}
     </div>
   )
 }

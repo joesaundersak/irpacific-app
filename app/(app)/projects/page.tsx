@@ -1,2 +1,3 @@
 import { ProjectsClient } from './projects-client'
-export default function ProjectsPage() { return <ProjectsClient /> }
+import { ensureAccess } from '@/lib/access-server'
+export default async function ProjectsPage() { await ensureAccess('projects'); return <ProjectsClient /> }

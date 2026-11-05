@@ -43,7 +43,7 @@ export async function GET() {
     // Action items by person
     const openActions = await prisma.actionItem.groupBy({
       by: ['assignedToId'],
-      where: { status: 'open' },
+      where: { status: { not: 'complete' } },
       _count: true,
     })
 
@@ -55,11 +55,12 @@ export async function GET() {
     users.forEach((u: any) => { userNameMap[u.id] = u.name })
 
     const actionsByPerson = openActions
-      .filter((a: any) => a.assignedToId)
       .map((a: any) => ({
-        name: userNameMap[a.assignedToId] ?? 'Unassigned',
+        id: a.assignedToId ?? 'unassigned',
+        name: a.assignedToId ? (userNameMap[a.assignedToId] ?? 'Unknown') : 'Unassigned',
         count: a._count,
       }))
+      .sort((a: any, b: any) => b.count - a.count)
 
     // Recent imports
     const recentImports = await prisma.importHistory.findMany({

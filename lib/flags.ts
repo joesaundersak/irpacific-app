@@ -39,16 +39,16 @@ export async function syncAccountabilityFlags(): Promise<{ created: number; reso
         key: `missing_schedule:job:${job.id}`, category: 'missing_schedule', jobId: job.id, priority: 'high',
         assignedToId: job.projectManagerId ?? adminId,
         description: ev.hasSchedule
-          ? `Complete schedule for ${label}: add dates for ${ev.missing.join(', ')}`
-          : `No schedule for ${label}: enter dates for ${ev.missing.join(', ')}`,
+          ? `Complete schedule in BuilderTrend for ${label}: add dates for ${ev.missing.join(', ')}`
+          : `No schedule in BuilderTrend for ${label}: enter dates for ${ev.missing.join(', ')}`,
       })
     }
     if (!job.projectManagerId) {
       desired.push({
         key: `no_pm:job:${job.id}`, category: 'no_pm', jobId: job.id, priority: 'high', assignedToId: adminId,
         description: job.projectManagerName
-          ? `Assign a project manager to ${label} (BuilderTrend lists "${job.projectManagerName}", who has no app login)`
-          : `Assign a project manager to ${label}`,
+          ? `${label}: BuilderTrend PM "${job.projectManagerName}" has no app login — fix the PM in BuilderTrend or add the user`
+          : `Assign a project manager to ${label} in BuilderTrend`,
       })
     }
     const info = jobMissingInfo(job)
@@ -78,8 +78,8 @@ export async function syncAccountabilityFlags(): Promise<{ created: number; reso
     desired.push({
       key: `no_pm:lead:${lead.id}`, category: 'no_pm', leadId: lead.id, priority: 'medium', assignedToId: adminId,
       description: lead.salespersonName
-        ? `Assign a project manager to lead: ${lead.opportunityTitle} (BuilderTrend lists "${lead.salespersonName}", who has no app login)`
-        : `Assign a project manager to lead: ${lead.opportunityTitle}`,
+        ? `Lead "${lead.opportunityTitle}": BuilderTrend salesperson "${lead.salespersonName}" has no app login — fix it in BuilderTrend or add the user`
+        : `Assign a salesperson to lead "${lead.opportunityTitle}" in BuilderTrend`,
     })
   }
 

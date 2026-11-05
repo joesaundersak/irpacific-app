@@ -57,24 +57,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to load AP data' }, { status: 500 })
   }
 }
-
-export async function PUT(request: Request) {
-  try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const body = await request.json()
-    const { id, isPaid } = body ?? {}
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-
-    const entry = await prisma.aPEntry.update({
-      where: { id },
-      data: { isPaid: isPaid ?? false },
-    })
-
-    return NextResponse.json(entry)
-  } catch (error: any) {
-    console.error('AP update error:', error)
-    return NextResponse.json({ error: 'Failed to update AP entry' }, { status: 500 })
-  }
-}

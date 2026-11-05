@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { getCurrentUser } from '@/lib/access-server'
 
 export async function GET() {
   try {
@@ -22,7 +23,8 @@ export async function PUT(request: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (session.user.role !== 'Admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+    const me = await getCurrentUser()
+    if (!me || (me.role !== 'Admin' && !me.access.settings)) return NextResponse.json({ error: 'You do not have access to change settings' }, { status: 403 })
 
     const body = await request.json()
     const entries = Object.entries(body ?? {})

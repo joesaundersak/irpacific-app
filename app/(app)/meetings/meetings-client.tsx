@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { PageHeader } from '@/components/layouts/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +21,8 @@ export function MeetingsClient() {
   const [showCreate, setShowCreate] = useState(false)
   const [newTitle, setNewTitle] = useState('Weekly Meeting')
   const [newDate, setNewDate] = useState('')
+  const [creating, setCreating] = useState(false)
+  const router = useRouter()
 
   const loadMeetings = () => {
     fetch('/api/meetings')
@@ -32,18 +35,21 @@ export function MeetingsClient() {
   useEffect(() => { loadMeetings() }, [])
 
   const createMeeting = async () => {
+    setCreating(true)
     try {
       const res = await fetch('/api/meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTitle, meetingDate: newDate || new Date().toISOString() }),
+        body: JSON.stringify({ title: newTitle, meetingDate: newDate ? new Date(newDate).toISOString() : new Date().toISOString() }),
       })
-      if (res.ok) {
-        toast.success('Meeting created with auto-generated action items')
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.id) {
+        toast.success('Meeting created — opening agenda')
         setShowCreate(false)
-        loadMeetings()
-      } else toast.error('Failed to create meeting')
+        router.push(`/meetings/${data.id}`)
+      } else toast.error(data?.error ?? 'Failed to create meeting')
     } catch { toast.error('Error creating meeting') }
+    finally { setCreating(false) }
   }
 
   return (
@@ -61,7 +67,7 @@ export function MeetingsClient() {
               <div className="space-y-4">
                 <div><Label>Title</Label><Input value={newTitle} onChange={e => setNewTitle(e.target.value)} /></div>
                 <div><Label>Date</Label><Input type="datetime-local" value={newDate} onChange={e => setNewDate(e.target.value)} /></div>
-                <Button onClick={createMeeting} className="w-full">Create & Generate Action Items</Button>
+                <Button onClick={createMeeting} className="w-full" disabled={creating}>{creating ? 'Creating…' : 'Create & Generate Action Items'}</Button>
               </div>
             </DialogContent>
           </Dialog>

@@ -1,16 +1,16 @@
 import { redirect } from 'next/navigation'
-import { auth } from '@/auth'
 import { AppShell } from '@/components/layouts/app-shell'
 import { AppSidebar } from '@/components/app-sidebar'
 import { AppHeader } from '@/components/app-header'
+import { getCurrentUser } from '@/lib/access-server'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const session = await auth()
-  if (!session?.user) {
+  const user = await getCurrentUser()
+  if (!user) {
     redirect('/login')
   }
   return (
-    <AppShell sidebar={<AppSidebar />} header={<AppHeader />}>
+    <AppShell sidebar={<AppSidebar access={user.access} />} header={<AppHeader />}>
       {children}
     </AppShell>
   )

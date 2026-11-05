@@ -98,7 +98,7 @@ export function MeetingDetailClient({ meetingId }: { meetingId: string }) {
         <Link href="/meetings"><Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button></Link>
         <PageHeader
           title={meeting?.title ?? 'Meeting'}
-          description={`${formatDate(meeting?.meetingDate)} \u2022 Created by ${meeting?.createdBy?.name ?? 'Unknown'}`}
+          description={`${formatDate(meeting?.meetingDate)} • Created by ${meeting?.createdBy?.name ?? 'Unknown'}`}
           actions={
             <Button onClick={sendSummary} disabled={sending}>
               <Send className="h-4 w-4 mr-2" />{sending ? 'Sending...' : 'Send Summary'}
@@ -184,7 +184,7 @@ export function MeetingDetailClient({ meetingId }: { meetingId: string }) {
                       <TableCell className="text-sm max-w-[300px]">
                         <p className={item.status === 'complete' ? 'line-through text-muted-foreground' : ''}>{item.description}</p>
                       </TableCell>
-                      <TableCell className="text-sm">{item.assignedTo?.name ?? '\u2014'}</TableCell>
+                      <TableCell className="text-sm">{item.assignedTo?.name ?? '—'}</TableCell>
                       <TableCell><Badge className={`text-xs ${priorityColor[item.priority] ?? ''}`}>{item.priority}</Badge></TableCell>
                       <TableCell><Badge variant="outline" className="text-xs">{item.category}</Badge></TableCell>
                       <TableCell className="text-sm">{formatDate(item.dueDate)}</TableCell>

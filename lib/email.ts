@@ -6,7 +6,7 @@ export interface SendEmailInput {
   html: string
 }
 
-function smtpConfigured(): boolean {
+export function smtpConfigured(): boolean {
   return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD)
 }
 
@@ -25,7 +25,7 @@ export function createSmtpTransport() {
   })
 }
 
-function describeSmtpError(err: unknown): Error {
+export function describeSmtpError(err: unknown): Error {
   const e = err as { code?: string; responseCode?: number; message?: string }
   if (e?.code === 'ETIMEDOUT' || e?.code === 'ECONNECTION' || e?.code === 'ESOCKET') {
     return new Error(

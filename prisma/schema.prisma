@@ -16,6 +16,8 @@ model User {
   role           Role     @relation(fields: [roleId], references: [id])
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  permissions    Json?
+  isActive       Boolean  @default(true)
 
   assignedJobs   Job[]    @relation("ProjectManager")
   assignedLeads  Lead[]   @relation("Salesperson")

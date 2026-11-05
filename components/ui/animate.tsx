@@ -2,8 +2,6 @@
 
 import { motion } from 'framer-motion'
 
-const viewportConfig = { once: true, margin: '-60px' as `${number}px` }
-
 export function FadeIn({
   children, delay = 0, duration = 0.4, className,
 }: {
@@ -11,9 +9,8 @@ export function FadeIn({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={viewportConfig}
+      initial={{ y: 8 }}
+      animate={{ y: 0 }}
       transition={{ duration, delay, ease: 'easeOut' }}
       className={className}
     >
@@ -29,9 +26,8 @@ export function ScaleIn({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      whileInView={{ opacity: 1, scale: 1 }}
-      viewport={viewportConfig}
+      initial={{ scale: 0.97 }}
+      animate={{ scale: 1 }}
       transition={{ duration: 0.3, delay, ease: 'easeOut' }}
       className={className}
     >
@@ -54,9 +50,8 @@ export function SlideIn({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, ...slideDirections[from] }}
-      whileInView={{ opacity: 1, x: 0, y: 0 }}
-      viewport={viewportConfig}
+      initial={{ ...slideDirections[from] }}
+      animate={{ x: 0, y: 0 }}
       transition={{ duration: 0.4, delay, ease: 'easeOut' }}
       className={className}
     >
@@ -71,11 +66,11 @@ export function Stagger({
   children: React.ReactNode; staggerDelay?: number; className?: string
 }) {
   return (
+    // Children animate themselves on mount, so items loaded or added later never stay hidden
     <motion.div
       variants={{ show: { transition: { staggerChildren: staggerDelay } } }}
       initial="hidden"
-      whileInView="show"
-      viewport={viewportConfig}
+      animate="show"
       className={className}
     >
       {children}
@@ -91,9 +86,11 @@ export function StaggerItem({
   return (
     <motion.div
       variants={{
-        hidden: { opacity: 0, y: 16 },
-        show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+        hidden: { y: 16 },
+        show: { y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
       }}
+      initial="hidden"
+      animate="show"
       className={className}
     >
       {children}

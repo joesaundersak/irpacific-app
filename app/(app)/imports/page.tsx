@@ -1,2 +1,3 @@
 import { ImportsClient } from './imports-client'
-export default function ImportsPage() { return <ImportsClient /> }
+import { ensureAccess } from '@/lib/access-server'
+export default async function ImportsPage() { await ensureAccess('imports'); return <ImportsClient /> }

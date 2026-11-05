@@ -75,11 +75,16 @@ export async function POST(request: Request) {
       where: { source: FLAG_SOURCE, status: { not: 'complete' }, meetingId: null },
       data: { meetingId: meeting.id },
     })
+    // Manually added items waiting for "the next meeting" (e.g. from the pipeline or project pages)
+    await prisma.actionItem.updateMany({
+      where: { source: 'manual', status: { not: 'complete' }, meetingId: null },
+      data: { meetingId: meeting.id },
+    })
 
     return NextResponse.json({ id: meeting.id })
   } catch (error: any) {
     console.error('Create meeting error:', error)
-    return NextResponse.json({ error: 'Failed to create meeting' }, { status: 500 })
+    return NextResponse.json({ error: `Failed to create meeting: ${error?.message ?? 'unknown error'}` }, { status: 500 })
   }
 }
 

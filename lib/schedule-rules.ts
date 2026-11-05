@@ -33,9 +33,18 @@ export const PRODUCT_PHASES: PhaseDef[] = [
 
 const PRODUCT_HINT = /sample|material(s)? only|supply only|product only|product sale|delivery only|cash\s?&?\s?carry|will call/i
 
-export function classifyJob(job: { scheduleType?: string | null; jobName?: string | null; jobType?: string | null; groups?: string | null }): ScheduleType {
-  if (job.scheduleType === 'install' || job.scheduleType === 'product') return job.scheduleType
-  const text = `${job.jobName ?? ''} ${job.jobType ?? ''} ${job.groups ?? ''}`
+const INSTALL_TAG = /\binstall(ation)?\b/i
+
+/**
+ * Install vs product sale comes from BuilderTrend only (the app never overrides it).
+ * Preferred flag: a BuilderTrend Job Group / Lead Tag named "Product Only" (or "Installation").
+ * Fallback: keywords in the job name / job type.
+ */
+export function classifyJob(job: { scheduleType?: string | null; jobName?: string | null; jobType?: string | null; groups?: string | null; tags?: string | null }): ScheduleType {
+  const tagText = `${job.groups ?? ''} ${job.tags ?? ''}`
+  if (PRODUCT_HINT.test(tagText)) return 'product'
+  if (INSTALL_TAG.test(tagText)) return 'install'
+  const text = `${job.jobName ?? ''} ${job.jobType ?? ''}`
   return PRODUCT_HINT.test(text) ? 'product' : 'install'
 }
 

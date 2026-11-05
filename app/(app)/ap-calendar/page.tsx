@@ -1,2 +1,3 @@
 import { APCalendarClient } from './ap-calendar-client'
-export default function APCalendarPage() { return <APCalendarClient /> }
+import { ensureAccess } from '@/lib/access-server'
+export default async function APCalendarPage() { await ensureAccess('ap'); return <APCalendarClient /> }

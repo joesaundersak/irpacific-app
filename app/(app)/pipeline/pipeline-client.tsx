@@ -1,17 +1,15 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useSession } from 'next-auth/react'
 import { PageHeader } from '@/components/layouts/page-header'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { TrendingUp, AlertCircle, Clock, DollarSign, ArrowUpDown, UserPlus, UserX } from 'lucide-react'
-import { formatCurrency, formatPercent, formatDate, daysSince } from '@/lib/format'
+import { TrendingUp, AlertCircle, Clock, DollarSign, ArrowUpDown, UserX } from 'lucide-react'
+import { formatCurrency, formatPercent } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
-import { toast } from 'sonner'
+import { AddActionItemDialog } from '@/components/add-action-item-dialog'
 
 interface Lead {
   id: string; opportunityTitle: string; clientContact: string | null; confidence: number
@@ -30,8 +28,6 @@ export function PipelineClient() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState({ salesperson: '', stale: '', status: '' })
   const [users, setUsers] = useState<any[]>([])
-  const { data: session } = useSession() || {}
-  const canAssign = session?.user?.role === 'Admin' || session?.user?.role === 'Office Manager'
 
   const loadData = useCallback((isStale: () => boolean = () => false) => {
     const params = new URLSearchParams()
@@ -56,36 +52,6 @@ export function PipelineClient() {
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
   }, [])
-
-  const handleConvert = async (leadId: string) => {
-    try {
-      const res = await fetch('/api/pipeline/convert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId }),
-      })
-      const data = await res.json()
-      if (res.ok) {
-        toast.success(`Converted to project ${data.jobCode}`)
-        loadData()
-      } else {
-        toast.error(data.error ?? 'Failed to convert')
-      }
-    } catch { toast.error('Failed to convert lead') }
-  }
-
-  const handleAssign = async (leadId: string, userId: string) => {
-    try {
-      const res = await fetch('/api/pipeline', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: leadId, salespersonId: userId }),
-      })
-      const data = await res.json()
-      if (res.ok) { toast.success('Project manager assigned'); loadData() }
-      else toast.error(data.error ?? 'Failed to assign')
-    } catch { toast.error('Failed to assign project manager') }
-  }
 
   return (
     <div className="space-y-6">
@@ -187,17 +153,7 @@ export function PipelineClient() {
                         </TableCell>
                         <TableCell className="text-sm">
                           {lead.noPm ? (
-                            <div className="space-y-1">
-                              <Badge className="text-[10px] bg-red-100 text-red-700" title={lead.salespersonName ? `BuilderTrend: ${lead.salespersonName}` : 'No salesperson in BuilderTrend'}>No PM</Badge>
-                              {canAssign && (
-                                <Select onValueChange={(v) => handleAssign(lead.id, v)}>
-                                  <SelectTrigger className="h-7 w-[140px] text-xs"><SelectValue placeholder="Assign…" /></SelectTrigger>
-                                  <SelectContent>
-                                    {users.map((u: any) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-                                  </SelectContent>
-                                </Select>
-                              )}
-                            </div>
+                            <Badge className="text-[10px] bg-red-100 text-red-700" title={lead.salespersonName ? `BuilderTrend: ${lead.salespersonName} (not matched to a user) — fix in BuilderTrend` : 'No salesperson in BuilderTrend — fix in BuilderTrend'}>No PM</Badge>
                           ) : (lead.salesperson?.name ?? '—')}
                         </TableCell>
                         <TableCell className="text-right text-sm">
@@ -207,18 +163,18 @@ export function PipelineClient() {
                         <TableCell className="text-right text-sm font-medium">{formatCurrency(lead.weightedValue)}</TableCell>
                         <TableCell><Badge variant="outline" className="text-xs">{lead.proposalStatus ?? '—'}</Badge></TableCell>
                         <TableCell>
-                          {lead.linkedJob ? (
-                            <Badge className="text-xs bg-green-100 text-green-700">Converted</Badge>
-                          ) : (
+                          <div className="flex flex-wrap gap-1">
                             <Badge variant="secondary" className="text-xs">{lead.leadStatus}</Badge>
-                          )}
+                            {lead.linkedJob && <Badge className="text-xs bg-green-100 text-green-700">{lead.linkedJob.jobCode}</Badge>}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          {!lead.linkedJob && (
-                            <Button size="sm" variant="outline" onClick={() => handleConvert(lead.id)}>
-                              <UserPlus className="h-3 w-3 mr-1" /> Convert
-                            </Button>
-                          )}
+                          <AddActionItemDialog
+                            leadId={lead.id}
+                            users={users}
+                            defaultAssigneeId={lead.salesperson?.id}
+                            defaultDescription={`Follow up: ${lead.opportunityTitle}`}
+                          />
                         </TableCell>
                       </TableRow>
                     ))

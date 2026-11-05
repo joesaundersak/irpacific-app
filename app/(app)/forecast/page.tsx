@@ -1,2 +1,3 @@
 import { ForecastClient } from './forecast-client'
-export default function ForecastPage() { return <ForecastClient /> }
+import { ensureAccess } from '@/lib/access-server'
+export default async function ForecastPage() { await ensureAccess('forecast'); return <ForecastClient /> }

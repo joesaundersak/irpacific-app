@@ -4,7 +4,6 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { isOpenLead } from '@/lib/schedule-rules'
 import { leadMissingInfo } from '@/lib/missing-info'
-import { safeSyncFlags } from '@/lib/flags'
 
 export async function GET(request: Request) {
   try {
@@ -68,25 +67,5 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('Pipeline error:', error)
     return NextResponse.json({ error: 'Failed to load pipeline' }, { status: 500 })
-  }
-}
-
-/** Assign a PM to a lead (Admin / Office Manager). */
-export async function PUT(request: Request) {
-  try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const role = session.user.role
-    if (role !== 'Admin' && role !== 'Office Manager') {
-      return NextResponse.json({ error: 'Only Admin or Office Manager can assign project managers' }, { status: 403 })
-    }
-    const { id, salespersonId } = (await request.json()) ?? {}
-    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
-    await prisma.lead.update({ where: { id }, data: { salespersonId: salespersonId || null } })
-    await safeSyncFlags()
-    return NextResponse.json({ ok: true })
-  } catch (error: any) {
-    console.error('Lead update error:', error)
-    return NextResponse.json({ error: 'Failed to update lead' }, { status: 500 })
   }
 }

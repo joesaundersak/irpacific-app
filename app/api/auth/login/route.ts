@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       where: { email: String(email).toLowerCase() },
       include: { role: true },
     })
-    if (!user) {
+    if (!user || user.isActive === false) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 })
     }
 

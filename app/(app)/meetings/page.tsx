@@ -1,2 +1,3 @@
 import { MeetingsClient } from './meetings-client'
-export default function MeetingsPage() { return <MeetingsClient /> }
+import { ensureAccess } from '@/lib/access-server'
+export default async function MeetingsPage() { await ensureAccess('meetings'); return <MeetingsClient /> }
