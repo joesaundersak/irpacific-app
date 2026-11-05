@@ -21,7 +21,7 @@ interface Lead {
   salesperson: { id: string; name: string } | null
   linkedJob: { id: string; jobCode: string } | null
   email: string | null; phone: string | null; cellPhone: string | null
-  noPm: boolean; salespersonName: string | null
+  noPm: boolean; salespersonName: string | null; missingInfo: string[]
 }
 
 export function PipelineClient() {
@@ -33,21 +33,26 @@ export function PipelineClient() {
   const { data: session } = useSession() || {}
   const canAssign = session?.user?.role === 'Admin' || session?.user?.role === 'Office Manager'
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback((isStale: () => boolean = () => false) => {
     const params = new URLSearchParams()
     if (filter.salesperson) params.set('salesperson', filter.salesperson)
     if (filter.stale === 'true') params.set('stale', 'true')
     if (filter.stale === 'nopm') params.set('noPm', 'true')
+    if (filter.stale === 'missing') params.set('missingInfo', 'true')
     if (filter.status) params.set('status', filter.status)
 
     fetch(`/api/pipeline?${params}`)
       .then((r) => r.json())
-      .then((d) => { setLeads(d.leads ?? []); setSummary(d.summary ?? null) })
+      .then((d) => { if (isStale()) return; setLeads(d.leads ?? []); setSummary(d.summary ?? null) })
       .catch(console.error)
-      .finally(() => setLoading(false))
+      .finally(() => { if (!isStale()) setLoading(false) })
   }, [filter])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    let stale = false
+    loadData(() => stale)
+    return () => { stale = true }
+  }, [loadData])
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
   }, [])
@@ -88,7 +93,7 @@ export function PipelineClient() {
 
       {/* Summary Strip */}
       <FadeIn>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
           <Card><CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-muted text-primary"><TrendingUp className="h-4 w-4" /></div>
             <div><p className="text-xs text-muted-foreground">Total Leads</p><p className="text-lg font-bold">{summary?.totalLeads ?? 0}</p></div>
@@ -108,6 +113,10 @@ export function PipelineClient() {
           <Card className="cursor-pointer" onClick={() => setFilter(f => ({ ...f, stale: 'nopm' }))}><CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-muted text-red-600"><UserX className="h-4 w-4" /></div>
             <div><p className="text-xs text-muted-foreground">No PM Assigned</p><p className="text-lg font-bold text-red-600">{summary?.noPmCount ?? 0}</p></div>
+          </CardContent></Card>
+          <Card className="cursor-pointer" onClick={() => setFilter(f => ({ ...f, stale: 'missing' }))}><CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-muted text-amber-600"><AlertCircle className="h-4 w-4" /></div>
+            <div><p className="text-xs text-muted-foreground">Missing Info</p><p className="text-lg font-bold text-amber-600">{summary?.missingInfoCount ?? 0}</p></div>
           </CardContent></Card>
         </div>
       </FadeIn>
@@ -129,6 +138,7 @@ export function PipelineClient() {
                 <SelectItem value="all">All Leads</SelectItem>
                 <SelectItem value="true">Stale Only</SelectItem>
                 <SelectItem value="nopm">No PM Assigned</SelectItem>
+                <SelectItem value="missing">Missing Info</SelectItem>
               </SelectContent>
             </Select>
           </CardContent>
@@ -168,7 +178,9 @@ export function PipelineClient() {
                               <p className="text-xs text-muted-foreground">{lead.clientContact ?? '—'}</p>
                             </div>
                             {lead.isStale && <Badge variant="outline" className="text-amber-600 border-amber-300 text-[10px]">Stale</Badge>}
-                            {!lead.email && !lead.phone && !lead.cellPhone && (
+                            {(lead.missingInfo?.length ?? 0) > 0 ? (
+                              <Badge className="text-[10px] bg-amber-100 text-amber-800 whitespace-nowrap" title={`Missing: ${lead.missingInfo.join(', ')}`}>Missing info</Badge>
+                            ) : !lead.email && !lead.phone && !lead.cellPhone && (
                               <span title="Missing contact info"><AlertCircle className="h-3 w-3 text-red-400" /></span>
                             )}
                           </div>

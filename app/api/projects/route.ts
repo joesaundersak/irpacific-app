@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { evaluateSchedule, isActiveJob } from '@/lib/schedule-rules'
+import { jobMissingInfo } from '@/lib/missing-info'
 
 export async function GET(request: Request) {
   try {
@@ -40,7 +41,9 @@ export async function GET(request: Request) {
       const flags: string[] = []
       if (active && !ev.complete) flags.push('missing_schedule')
       if (active && !j.projectManagerId) flags.push('no_pm')
-      return { j, active, ev, flags }
+      const missingInfo = jobMissingInfo(j)
+      if (active && missingInfo.length) flags.push('missing_info')
+      return { j, active, ev, flags, missingInfo }
     }).filter(({ active, flags }) => {
       if (activeOnly && !active) return false
       if (flag === 'any') return flags.length > 0
@@ -52,8 +55,9 @@ export async function GET(request: Request) {
       flagCounts: {
         missingSchedule: enriched.filter(e => e.flags.includes('missing_schedule')).length,
         noPm: enriched.filter(e => e.flags.includes('no_pm')).length,
+        missingInfo: enriched.filter(e => e.flags.includes('missing_info')).length,
       },
-      jobs: enriched.map(({ j, active, ev, flags }) => {
+      jobs: enriched.map(({ j, active, ev, flags, missingInfo }) => {
         const { milestones: _m, ...rest } = j
         const margin = j.totalRevisedPrice > 0
           ? ((j.totalRevisedPrice - j.actualCosts) / j.totalRevisedPrice) * 100
@@ -65,6 +69,7 @@ export async function GET(request: Request) {
           missingPhases: ev.missing,
           totalPhases: ev.phases.length,
           flags,
+          missingInfo,
           computedMargin: margin,
           marginHealth: margin >= targetMargin ? 'green' : margin >= 15 ? 'yellow' : 'red',
           createdAt: j.createdAt?.toISOString(),

@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { ArrowRight, CalendarX, UserX } from 'lucide-react'
+import { ArrowRight, CalendarX, UserX, FileWarning } from 'lucide-react'
 import { formatCurrency, formatPercent } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
 
@@ -16,9 +16,9 @@ export function ProjectsClient() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState({ pm: '', state: '', status: '', flag: '' })
   const [users, setUsers] = useState<any[]>([])
-  const [flagCounts, setFlagCounts] = useState<{ missingSchedule: number; noPm: number } | null>(null)
+  const [flagCounts, setFlagCounts] = useState<{ missingSchedule: number; noPm: number; missingInfo: number } | null>(null)
 
-  const loadData = useCallback(() => {
+  const loadData = useCallback((isStale: () => boolean = () => false) => {
     const params = new URLSearchParams()
     if (filter.pm) params.set('pm', filter.pm)
     if (filter.state) params.set('state', filter.state)
@@ -27,15 +27,19 @@ export function ProjectsClient() {
     else if (filter.flag) params.set('flag', filter.flag)
     fetch(`/api/projects?${params}`)
       .then(r => r.json())
-      .then(d => { setJobs(d.jobs ?? []); setFlagCounts(d.flagCounts ?? null) })
+      .then(d => { if (isStale()) return; setJobs(d.jobs ?? []); setFlagCounts(d.flagCounts ?? null) })
       .catch(console.error)
-      .finally(() => setLoading(false))
+      .finally(() => { if (!isStale()) setLoading(false) })
   }, [filter])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    let stale = false
+    loadData(() => stale)
+    return () => { stale = true }
+  }, [loadData])
   useEffect(() => {
     const f = new URLSearchParams(window.location.search).get('flag')
-    if (f && ['missing_schedule', 'no_pm', 'any', 'active'].includes(f)) setFilter(prev => ({ ...prev, flag: f }))
+    if (f && ['missing_schedule', 'no_pm', 'missing_info', 'any', 'active'].includes(f)) setFilter(prev => ({ ...prev, flag: f }))
   }, [])
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
@@ -50,13 +54,13 @@ export function ProjectsClient() {
     <div className="space-y-6">
       <PageHeader title="Projects" description="Active job tracking with financial and milestone views" />
       <FadeIn>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
           <Card className="cursor-pointer" onClick={() => setFilter(f => ({ ...f, flag: 'missing_schedule' }))}>
             <CardContent className="p-4 flex items-center gap-3">
               <div className="p-2 rounded-lg bg-red-50 text-red-600"><CalendarX className="h-4 w-4" /></div>
               <div>
                 <p className="text-xs text-muted-foreground">Active projects missing schedule phases</p>
-                <p className="text-lg font-bold text-red-600">{filter.flag === 'no_pm' ? '—' : flagCounts?.missingSchedule ?? 0}</p>
+                <p className="text-lg font-bold text-red-600">{['no_pm', 'missing_info'].includes(filter.flag) ? '—' : flagCounts?.missingSchedule ?? 0}</p>
               </div>
             </CardContent>
           </Card>
@@ -65,7 +69,16 @@ export function ProjectsClient() {
               <div className="p-2 rounded-lg bg-red-50 text-red-600"><UserX className="h-4 w-4" /></div>
               <div>
                 <p className="text-xs text-muted-foreground">Active projects with no PM assigned</p>
-                <p className="text-lg font-bold text-red-600">{filter.flag === 'missing_schedule' ? '—' : flagCounts?.noPm ?? 0}</p>
+                <p className="text-lg font-bold text-red-600">{['missing_schedule', 'missing_info'].includes(filter.flag) ? '—' : flagCounts?.noPm ?? 0}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="cursor-pointer" onClick={() => setFilter(f => ({ ...f, flag: 'missing_info' }))}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-50 text-amber-600"><FileWarning className="h-4 w-4" /></div>
+              <div>
+                <p className="text-xs text-muted-foreground">Active projects missing info (update in BuilderTrend)</p>
+                <p className="text-lg font-bold text-amber-600">{['missing_schedule', 'no_pm'].includes(filter.flag) ? '—' : flagCounts?.missingInfo ?? 0}</p>
               </div>
             </CardContent>
           </Card>
@@ -95,6 +108,7 @@ export function ProjectsClient() {
                 <SelectItem value="any">Flagged (any)</SelectItem>
                 <SelectItem value="missing_schedule">Missing Schedule</SelectItem>
                 <SelectItem value="no_pm">No PM Assigned</SelectItem>
+                <SelectItem value="missing_info">Missing Info</SelectItem>
               </SelectContent>
             </Select>
           </CardContent>
@@ -140,6 +154,9 @@ export function ProjectsClient() {
                               </Badge>
                             )}
                             {job.flags?.includes('no_pm') && <Badge className="text-[10px] bg-red-100 text-red-700">No PM</Badge>}
+                            {job.flags?.includes('missing_info') && (
+                              <Badge className="text-[10px] bg-amber-100 text-amber-800" title={`Missing: ${(job.missingInfo ?? []).join(', ')}`}>Missing info</Badge>
+                            )}
                             {job.isActive && job.flags?.length === 0 && <Badge className="text-[10px] bg-green-100 text-green-700">Scheduled</Badge>}
                           </div>
                         </TableCell>

@@ -1,9 +1,10 @@
 /* Accountability flags: missing schedule phases and missing PM become (and auto-resolve) action items. */
 import { prisma } from '@/lib/db'
 import { evaluateSchedule, isActiveJob, isOpenLead } from '@/lib/schedule-rules'
+import { jobMissingInfo, leadMissingInfo, JOB_INFO_FIELDS, LEAD_INFO_FIELDS } from '@/lib/missing-info'
 
 export const FLAG_SOURCE = 'auto-flag'
-export const FLAG_CATEGORIES = ['missing_schedule', 'no_pm']
+export const FLAG_CATEGORIES = ['missing_schedule', 'no_pm', 'missing_info']
 
 interface Desired { key: string; description: string; assignedToId: string | null; category: string; jobId?: string; leadId?: string; priority: string }
 
@@ -24,8 +25,8 @@ export async function syncAccountabilityFlags(): Promise<{ created: number; reso
   const jobs = await prisma.job.findMany({
     where: { status: 'OPEN' },
     select: {
-      id: true, jobCode: true, jobName: true, status: true, actualCompletion: true, percentComplete: true, groups: true,
-      jobType: true, scheduleType: true, projectManagerId: true, projectManagerName: true,
+      id: true, jobName: true, status: true, actualCompletion: true, percentComplete: true, groups: true,
+      jobType: true, scheduleType: true, projectManagerId: true, projectManagerName: true, ...JOB_INFO_FIELDS,
       milestones: { select: { phase: true, title: true, startDate: true, endDate: true } },
     },
   })
@@ -50,14 +51,30 @@ export async function syncAccountabilityFlags(): Promise<{ created: number; reso
           : `Assign a project manager to ${label}`,
       })
     }
+    const info = jobMissingInfo(job)
+    if (info.length > 0) {
+      desired.push({
+        key: `missing_info:job:${job.id}`, category: 'missing_info', jobId: job.id, priority: 'medium',
+        assignedToId: job.projectManagerId ?? adminId,
+        description: `Update ${label} in BuilderTrend: missing ${info.join(', ')}`,
+      })
+    }
   }
 
   const leads = await prisma.lead.findMany({
-    where: { salespersonId: null },
-    select: { id: true, opportunityTitle: true, leadStatus: true, linkedJobId: true, soldDate: true, salespersonName: true },
+    select: { id: true, leadStatus: true, linkedJobId: true, soldDate: true, salespersonId: true, salespersonName: true, ...LEAD_INFO_FIELDS },
   })
   for (const lead of leads) {
     if (!isOpenLead(lead)) continue
+    const info = leadMissingInfo(lead)
+    if (info.length > 0) {
+      desired.push({
+        key: `missing_info:lead:${lead.id}`, category: 'missing_info', leadId: lead.id, priority: 'low',
+        assignedToId: lead.salespersonId ?? adminId,
+        description: `Update lead "${lead.opportunityTitle}" in BuilderTrend: missing ${info.join(', ')}`,
+      })
+    }
+    if (lead.salespersonId) continue
     desired.push({
       key: `no_pm:lead:${lead.id}`, category: 'no_pm', leadId: lead.id, priority: 'medium', assignedToId: adminId,
       description: lead.salespersonName
@@ -65,6 +82,12 @@ export async function syncAccountabilityFlags(): Promise<{ created: number; reso
         : `Assign a project manager to lead: ${lead.opportunityTitle}`,
     })
   }
+
+  // Older imports created one-off "missing contact" items; missing_info flags now cover them and auto-resolve
+  await prisma.actionItem.updateMany({
+    where: { source: 'import', category: 'missing_contact', status: { not: 'complete' } },
+    data: { status: 'complete' },
+  })
 
   const existing = await prisma.actionItem.findMany({
     where: { source: FLAG_SOURCE, category: { in: FLAG_CATEGORIES }, status: { not: 'complete' } },

@@ -45,7 +45,8 @@ export function ImportsClient() {
 
       if (res.ok) {
         setLastResult(data)
-        toast.success(`Import complete: ${data?.records?.added ?? 0} added, ${data?.records?.updated ?? 0} updated`)
+        const flagged = data?.flags?.created ?? 0
+        toast.success(`Import complete: ${data?.records?.added ?? 0} added, ${data?.records?.updated ?? 0} updated${flagged ? `, ${flagged} flagged for missing info` : ''}`)
         // Reload history
         fetch('/api/dashboard').then(r => r.json()).then(d => setHistory(d?.recentImports ?? []))
       } else {
@@ -142,10 +143,15 @@ export function ImportsClient() {
                   <p className="text-sm font-bold">{lastResult?.records?.unchanged ?? 0}</p>
                 </div>
               </div>
+              {(lastResult?.records?.skipped ?? 0) > 0 && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  {lastResult.records.skipped} row(s) could not be read and were skipped — all other rows were imported.
+                </p>
+              )}
               {(lastResult?.warnings?.length ?? 0) > 0 && (
                 <div className="mt-3 p-3 bg-amber-50 rounded-lg">
                   <div className="flex items-center gap-2 text-amber-700 text-sm font-medium mb-1">
-                    <AlertTriangle className="h-4 w-4" /> Warnings
+                    <AlertTriangle className="h-4 w-4" /> Notes & records flagged for update
                   </div>
                   {(lastResult?.warnings ?? []).map((w: string, i: number) => (
                     <p key={i} className="text-xs text-amber-600">{w}</p>

@@ -14,13 +14,14 @@ const SIGNATURES: Record<FileType, string[]> = {
 }
 
 export function detectFileType(headers: string[]): FileType {
-  const headerSet = new Set(headers.map((h: string) => h?.trim()))
-  // Check most specific first
-  if (headerSet.has('Related Job') && headerSet.has('Opportunity Title')) return 'leads_expanded'
-  if (headerSet.has('Job Name') && headerSet.has('Client Email') && headerSet.has('Groups')) return 'jobsites'
-  if (headerSet.has('Job name') && headerSet.has('Projected costs') && headerSet.has('% complete of job')) return 'wip'
-  if (headerSet.has('Job') && headerSet.has('Phase') && headerSet.has('Duration') && headerSet.has('Start')) return 'schedule'
-  if (headerSet.has('Opportunity Title') && headerSet.has('Confidence')) return 'leads_basic'
+  // Case-insensitive, tolerant of a missing optional column; most specific first
+  const h = new Set(headers.map((x: string) => String(x ?? '').trim().toLowerCase()))
+  const has = (...keys: string[]) => keys.every(k => h.has(k.toLowerCase()))
+  if (has('Opportunity Title') && has('Related Job')) return 'leads_expanded'
+  if (has('Job Name') && (has('Client Email') || has('Groups') || has('Contract Price'))) return 'jobsites'
+  if (has('Job name') && (has('Projected costs') || has('% complete of job') || has('Revised price'))) return 'wip'
+  if (has('Job', 'Phase') && (has('Duration') || has('Start') || has('Title'))) return 'schedule'
+  if (has('Opportunity Title')) return 'leads_basic'
   return 'unknown'
 }
 
@@ -28,6 +29,21 @@ export function extractJobCode(jobName: string): string | null {
   if (!jobName) return null
   const match = jobName.match(/((?:WA|OR)\d+)/i)
   return match ? match[1].toUpperCase().replace(/([A-Z]{2})(\d+)[A-Za-z]*$/, '$1$2') : null
+}
+
+/** Prefix for jobs imported without a WA/OR job code in their name (flagged for follow-up). */
+export const PLACEHOLDER_CODE_PREFIX = 'NC-'
+export const isPlaceholderJobCode = (code: string | null | undefined) => !!code && code.startsWith(PLACEHOLDER_CODE_PREFIX)
+
+/** WA/OR code from the job name, or a stable placeholder derived from the name so the job still imports. */
+export function resolveJobCode(jobName: string): string {
+  const code = extractJobCode(jobName)
+  if (code) return code
+  const norm = jobName.trim().toUpperCase().replace(/\s+/g, ' ')
+  let hash = 0
+  for (let i = 0; i < norm.length; i++) hash = (hash * 31 + norm.charCodeAt(i)) >>> 0
+  const slug = norm.replace(/[^A-Z0-9]/g, '').slice(0, 14) || 'JOB'
+  return `${PLACEHOLDER_CODE_PREFIX}${slug}-${hash.toString(36).slice(0, 4).toUpperCase()}`
 }
 
 export function parseExcelBuffer(buffer: Buffer): { headers: string[]; rows: Record<string, any>[] } {
@@ -41,13 +57,13 @@ export function parseExcelBuffer(buffer: Buffer): { headers: string[]; rows: Rec
   
   let headerRowIdx = 0
   let bestScore = 0
-  for (let i = 0; i < Math.min(5, allRows.length); i++) {
+  const known = new Set(Object.values(SIGNATURES).flat().map(k => k.toLowerCase()))
+  for (let i = 0; i < Math.min(10, allRows.length); i++) {
     const row = allRows[i] ?? []
     const nonEmpty = row.filter((c: any) => c !== '' && c != null).length
-    // Also check if row contains known keywords
-    const rowStr = row.join(' ').toLowerCase()
-    let score = nonEmpty
-    if (rowStr.includes('job') || rowStr.includes('title') || rowStr.includes('opportunity')) score += 10
+    // Rows made of known column names win over data rows
+    const matches = row.filter((c: any) => known.has(String(c ?? '').trim().toLowerCase())).length
+    let score = nonEmpty + matches * 20
     if (score > bestScore) {
       bestScore = score
       headerRowIdx = i

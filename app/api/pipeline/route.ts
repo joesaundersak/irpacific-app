@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { isOpenLead } from '@/lib/schedule-rules'
+import { leadMissingInfo } from '@/lib/missing-info'
 import { safeSyncFlags } from '@/lib/flags'
 
 export async function GET(request: Request) {
@@ -15,6 +16,7 @@ export async function GET(request: Request) {
     const staleOnly = url.searchParams.get('stale') === 'true'
     const status = url.searchParams.get('status') ?? undefined
     const noPmOnly = url.searchParams.get('noPm') === 'true'
+    const missingOnly = url.searchParams.get('missingInfo') === 'true'
 
     const where: any = {}
     if (salespersonId) where.salespersonId = salespersonId
@@ -32,7 +34,8 @@ export async function GET(request: Request) {
     })
 
     const noPm = (l: any) => !l.salespersonId && isOpenLead(l)
-    const shown = noPmOnly ? leads.filter(noPm) : leads
+    const missingInfo = (l: any) => (isOpenLead(l) ? leadMissingInfo(l) : [])
+    const shown = leads.filter((l: any) => (!noPmOnly || noPm(l)) && (!missingOnly || missingInfo(l).length > 0))
     const totalWeighted = leads.reduce((s: number, l: any) => s + (l.weightedValue ?? 0), 0)
     const avgConfidence = leads.length > 0
       ? leads.reduce((s: number, l: any) => s + (l.confidence ?? 0), 0) / leads.length
@@ -42,6 +45,7 @@ export async function GET(request: Request) {
       leads: shown.map((l: any) => ({
         ...l,
         noPm: noPm(l),
+        missingInfo: missingInfo(l),
         createdAt: l.createdAt?.toISOString(),
         updatedAt: l.updatedAt?.toISOString(),
         createdDate: l.createdDate?.toISOString() ?? null,
@@ -58,6 +62,7 @@ export async function GET(request: Request) {
         avgConfidence,
         staleCount: leads.filter((l: any) => l.isStale).length,
         noPmCount: leads.filter(noPm).length,
+        missingInfoCount: leads.filter((l: any) => missingInfo(l).length > 0).length,
       },
     })
   } catch (error: any) {
