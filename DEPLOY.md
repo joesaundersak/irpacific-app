@@ -29,9 +29,7 @@ Wait until it shows "Online" (a few minutes).
 3. Replace every `CHANGE_ME` value under Environment Variables (they are encrypted there):
    - `AUTH_SECRET` and `NEXTAUTH_SECRET`: the same random value (`openssl rand -base64 32`).
    - `SEED_USER_PASSWORD` (on the db-migrate job): initial password for the 4 team accounts.
-   - `SMTP_USER`: `info@irpnw.com` (the Office 365 mailbox that sends the emails; pre-filled in the spec).
-   - `SMTP_PASSWORD`: the password for info@irpnw.com.
-   - `SMTP_FROM`: `info@irpnw.com` (pre-filled; keep it equal to `SMTP_USER`).
+   - Email credentials are NOT environment variables any more: enter them in the app under Settings -> Email (step 6).
 4. Create the app. The first deploy runs the `db-migrate` job (creates tables, roles, the 4 users, settings) and then
    starts the web service. Check Activity -> Deploy logs if anything fails.
 5. In Databases -> irpacific-db -> Settings -> Trusted Sources, make sure the app `irpacific-app` is listed.
@@ -44,12 +42,16 @@ Wait until it shows "Online" (a few minutes).
 3. Wait for the domain to show "Active" (SSL certificate is issued automatically, usually under 30 minutes).
 
 ## 6. Email (meeting summaries) via Office 365 SMTP
-The app sends through `smtp.office365.com` port 587 (STARTTLS, TLS 1.2+), logged in as `SMTP_USER`.
+The app sends through `smtp.office365.com` port 587 (STARTTLS, TLS 1.2+). Sign in as an Admin, open **Settings -> Email**,
+enter SMTP server `smtp.office365.com`, port `587`, login `info@irpnw.com`, its password and Sends from `info@irpnw.com`,
+then click **Save Email Settings** and **Send Test**. The values are stored in the database; the password is never shown
+again (leave it blank when saving other changes to keep it). Optional `SMTP_*` environment variables are still read as a
+fallback for any value not saved in the app.
 1. **Enable Authenticated SMTP on the mailbox**: Microsoft 365 admin center -> Users -> Active users -> select the
    sender mailbox (info@irpnw.com) -> Mail -> Manage email apps -> check **Authenticated SMTP** -> Save. (If Security Defaults are on in
    Microsoft Entra ID, SMTP AUTH is blocked tenant-wide until they are turned off or replaced with Conditional Access.)
 2. If info@irpnw.com uses MFA, password login over SMTP will be rejected; turn MFA off for that mailbox (or use another
-   licensed mailbox without MFA and update `SMTP_USER`/`SMTP_FROM`).
+   licensed mailbox without MFA and update the login and Sends from in Settings -> Email).
 3. **Ask DigitalOcean to unblock outbound SMTP**: DigitalOcean blocks ports 25/465/587 by default. Open a ticket at
    cloud.digitalocean.com/support -> "Networking" and ask them to allow outbound SMTP on port 587 for your account
    so the app `irpacific-app` can send through your own Office 365 tenant (smtp.office365.com). Until they do,
