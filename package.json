@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "(prisma db push --skip-generate || echo 'WARNING: database schema update failed - check DATABASE_URL') && next start -p ${PORT:-3000}",
     "lint": "eslint .",
     "postinstall": "prisma generate",
     "db:push": "prisma db push --skip-generate",
@@ -115,7 +115,7 @@
   "engines": {
     "node": "22.x"
   },
-  "version": "1.0.5",
+  "version": "1.0.6",
   "overrides": {
     "motion-dom": "12.23.12",
     "motion-utils": "12.23.6"

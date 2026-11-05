@@ -92,7 +92,11 @@ export async function POST(request: Request) {
     })
   } catch (error: any) {
     console.error('Import error:', error)
-    return NextResponse.json({ error: error?.message ?? 'Import failed' }, { status: 500 })
+    // P2021/P2022 = table/column missing: the database was never updated to this version's schema
+    if (error?.code === 'P2021' || error?.code === 'P2022') {
+      return NextResponse.json({ error: 'The database structure is out of date for this version of the app. Restart/redeploy the app (it updates the database on start) or run "npm run db:push".' }, { status: 500 })
+    }
+    return NextResponse.json({ error: errMsg(error) || 'Import failed' }, { status: 500 })
   }
 }
 

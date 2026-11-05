@@ -16,6 +16,7 @@ export function ImportsClient() {
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [lastResult, setLastResult] = useState<any>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/dashboard')
@@ -41,35 +42,48 @@ export function ImportsClient() {
       formData.append('file', file)
 
       const res = await fetch('/api/import', { method: 'POST', body: formData })
-      const data = await res.json()
+      const text = await res.text()
+      let data: any = null
+      try { data = JSON.parse(text) } catch { /* non-JSON reply (proxy/timeout page) */ }
 
-      if (res.ok) {
+      if (res.ok && data?.success) {
         setLastResult(data)
         const flagged = data?.flags?.created ?? 0
-        toast.success(`Import complete: ${data?.records?.added ?? 0} added, ${data?.records?.updated ?? 0} updated${flagged ? `, ${flagged} flagged for missing info` : ''}`)
+        toast.success(`${file.name}: ${data?.records?.added ?? 0} added, ${data?.records?.updated ?? 0} updated${flagged ? `, ${flagged} flagged for missing info` : ''}`)
         // Reload history
         fetch('/api/dashboard').then(r => r.json()).then(d => setHistory(d?.recentImports ?? []))
       } else {
-        toast.error(data?.error ?? 'Import failed')
+        const msg = data?.error ?? `Server returned ${res.status} ${res.statusText}${text ? ` — ${text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)}` : ''}`
+        console.error('Import failed:', file.name, msg)
+        setUploadError(prev => (prev ? prev + '\n' : '') + `${file.name}: ${msg}`)
+        toast.error(msg)
       }
-    } catch {
-      toast.error('Upload failed')
+    } catch (e: any) {
+      const msg = `${file.name}: upload failed (${e?.message ?? 'network error'})`
+      console.error(msg)
+      setUploadError(prev => (prev ? prev + '\n' : '') + msg)
+      toast.error(msg)
     } finally {
       setUploading(false)
     }
   }, [])
 
+  // Several exports can be dropped at once; they are imported one after another
+  const handleFiles = useCallback(async (files: FileList | null | undefined) => {
+    setUploadError(null)
+    for (const file of Array.from(files ?? [])) await handleUpload(file)
+  }, [handleUpload])
+
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    const file = e.dataTransfer?.files?.[0]
-    if (file) handleUpload(file)
-  }, [handleUpload])
+    handleFiles(e.dataTransfer?.files)
+  }, [handleFiles])
 
   const onFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target?.files?.[0]
-    if (file) handleUpload(file)
-  }, [handleUpload])
+    handleFiles(e.target?.files)
+    e.target.value = ''
+  }, [handleFiles])
 
   return (
     <div className="space-y-6">
@@ -93,7 +107,7 @@ export function ImportsClient() {
                 <Upload className="h-10 w-10 text-muted-foreground mb-3" />
               )}
               <p className="text-sm font-medium">
-                {uploading ? 'Processing file...' : 'Drag & drop a BuilderTrend export here'}
+                {uploading ? 'Processing file...' : 'Drag & drop BuilderTrend exports here (one or several)'}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 Supports: Jobsites, WIP Report, Schedule, Leads (.xls, .xlsx)
@@ -102,6 +116,7 @@ export function ImportsClient() {
                 type="file"
                 className="hidden"
                 accept=".xls,.xlsx"
+                multiple
                 onChange={onFileSelect}
                 disabled={uploading}
               />
@@ -109,6 +124,13 @@ export function ImportsClient() {
           </CardContent>
         </Card>
       </FadeIn>
+
+      {uploadError && (
+        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-medium flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> Import did not complete</p>
+          <p className="mt-1 whitespace-pre-line break-words">{uploadError}</p>
+        </div>
+      )}
 
       {/* Last Result */}
       {lastResult && (

@@ -72,14 +72,27 @@ It prints "Password updated for N user(s)." If it says no user was found, it lis
 are none, run `npm run db:seed` in the same console first.
 
 ## Updating the app
-Each update arrives as a new zip. Unzip it over your local `irpacific-app` folder (keep the `.git` folder), then:
+Each update arrives as a new zip. **Check the live version** at the bottom of the left sidebar ("Version x.y.z"):
+if it does not show the version you just pushed, the new build has not gone live (check DigitalOcean -> Activity).
+
+The zip has more than 100 files, and GitHub's web "Upload files" page accepts only 100 at a time and skips files
+whose names start with a dot, so a web upload easily leaves an old `package.json` behind. Use git or GitHub Desktop:
+1. In your local clone, delete everything except the `.git` folder.
+2. Unzip the new zip and copy the contents of its `irpacific-app` folder into the clone.
+3. Commit and push:
 ```bash
 git add -A
-git commit -m "Update to v<version>"
-git push
+- **Build fails with `npm error ERESOLVE` (e.g. `cmdk`, `vaul`, `react-day-picker`)**: the repo still has an old
+  `package.json`/`package-lock.json`. Replace them with the ones from the latest zip (see "Updating the app").
+  Do not add `npm_config_legacy_peer_deps`.
+- **Import says "database structure is out of date"**: the run command is not `npm start`. In DigitalOcean -> app ->
+  Settings -> `web` -> Run Command, set it to `npm start`, or run `npm run db:push` once in the Console tab.
 ```
-DigitalOcean auto-deploys every push to `main`; the db-migrate job applies schema changes before the new version
-goes live. Data in the database is kept between deploys.
+(GitHub Desktop: the changes appear automatically; write a summary, **Commit to main**, then **Push origin**.)
+
+DigitalOcean auto-deploys every push to `main`. The app brings the database structure up to date each time it
+starts (`npm start` runs `prisma db push` first, never with data loss), so no separate migration step is needed.
+Data in the database is kept between deploys.
 
 ## Troubleshooting
 - **Build fails with `npm error ERESOLVE`**: an old zip is in the repo. Push the latest zip (v1.0.2 or later), which

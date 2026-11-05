@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layouts/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  TrendingUp, FolderKanban, AlertTriangle, Clock, Users, Upload, ArrowRight, CalendarX, UserX,
+  TrendingUp, FolderKanban, AlertTriangle, Clock, Users, Upload, ArrowRight, CalendarX, UserX, FileWarning,
 } from 'lucide-react'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/format'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/animate'
@@ -23,6 +23,7 @@ interface DashboardData {
   targetMargin: number
   missingScheduleCount: number
   noPmCount: number
+  missingInfoCount: number
 }
 
 export function DashboardClient() {
@@ -41,8 +42,8 @@ export function DashboardClient() {
     return (
       <div className="space-y-6">
         <PageHeader title="Dashboard" description="Operations overview" />
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          {[1,2,3,4,5,6,7].map((i) => (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[1,2,3,4,5,6,7,8].map((i) => (
             <Card key={i} className="animate-pulse"><CardContent className="p-6"><div className="h-16 bg-muted rounded" /></CardContent></Card>
           ))}
         </div>
@@ -58,13 +59,14 @@ export function DashboardClient() {
     { label: 'Open Actions', value: String((data?.actionsByPerson ?? []).reduce((s: number, a: any) => s + a.count, 0)), icon: Users, color: 'text-purple-600' },
     { label: 'Missing Schedules', value: String(data?.missingScheduleCount ?? 0), icon: CalendarX, color: data?.missingScheduleCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=missing_schedule' },
     { label: 'No PM Assigned', value: String(data?.noPmCount ?? 0), icon: UserX, color: data?.noPmCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=no_pm' },
+    { label: 'Missing Info', value: String(data?.missingInfoCount ?? 0), icon: FileWarning, color: data?.missingInfoCount ? 'text-amber-500' : 'text-green-600', href: '/projects?flag=missing_info' },
   ]
 
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" description="Real-time operations overview for Interior Resources" />
       <FadeIn>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {kpis.map((kpi: any, i) => (
             <Card key={i} className={kpi.href ? 'hover:shadow-md transition-shadow' : ''}>
               <CardContent className="p-4">

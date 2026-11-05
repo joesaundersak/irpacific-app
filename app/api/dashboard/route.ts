@@ -92,14 +92,16 @@ export async function GET() {
       },
     })
 
-    const [missingScheduleCount, noPmCount] = await Promise.all([
+    const [missingScheduleCount, noPmCount, missingInfoCount] = await Promise.all([
       prisma.actionItem.count({ where: { source: 'auto-flag', category: 'missing_schedule', status: { not: 'complete' } } }),
       prisma.actionItem.count({ where: { source: 'auto-flag', category: 'no_pm', status: { not: 'complete' } } }),
+      prisma.actionItem.count({ where: { source: 'auto-flag', category: 'missing_info', status: { not: 'complete' } } }),
     ])
 
     return NextResponse.json({
       missingScheduleCount,
       noPmCount,
+      missingInfoCount,
       weightedPipeline,
       activeProjects: activeJobs,
       atRiskCount: atRiskJobs.length,

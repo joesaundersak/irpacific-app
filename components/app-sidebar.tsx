@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useSession, signOut } from 'next-auth/react'
+import { APP_VERSION } from '@/lib/version'
 import {
   LayoutDashboard,
   TrendingUp,
@@ -98,6 +99,7 @@ export function AppSidebar() {
           <LogOut className="mr-2 h-4 w-4" />
           Sign Out
         </Button>
+        <p className="mt-2 px-2 text-[10px] text-muted-foreground">Version {APP_VERSION}</p>
       </div>
     </div>
   )
