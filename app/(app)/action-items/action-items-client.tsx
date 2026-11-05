@@ -48,7 +48,7 @@ const PRIORITY_CLASS: Record<string, string> = {
   low: 'text-muted-foreground',
 }
 
-export function AccountabilityClient({ initialUser }: { initialUser: string }) {
+export function ActionItemsClient({ initialUser }: { initialUser: string }) {
   const router = useRouter()
   const [items, setItems] = useState<Item[]>([])
   const [users, setUsers] = useState<UserLite[]>([])
@@ -118,7 +118,7 @@ export function AccountabilityClient({ initialUser }: { initialUser: string }) {
 
   const selectPerson = (key: string) => {
     setPerson(key)
-    router.replace(key === 'all' ? '/accountability' : `/accountability?user=${key}`, { scroll: false })
+    router.replace(key === 'all' ? '/action-items' : `/action-items?user=${key}`, { scroll: false })
   }
 
   const update = async (id: string, patch: Partial<Item>) => {
@@ -147,7 +147,7 @@ export function AccountabilityClient({ initialUser }: { initialUser: string }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Accountability"
+        title="Action Items"
         description="Who is responsible for what. Click a person to see and manage their action items."
         actions={
           <AddActionItemDialog

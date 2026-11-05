@@ -36,7 +36,8 @@ export async function PUT(request: Request) {
     const port = String(body.port ?? '').trim() || '587'
     const user = String(body.user ?? '').trim()
     const from = String(body.from ?? '').trim()
-    const password = typeof body.password === 'string' ? body.password : ''
+    // Trim stray spaces/newlines picked up when copy-pasting an app password
+    const password = typeof body.password === 'string' ? body.password.trim() : ''
     const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
     if (!host) return NextResponse.json({ error: 'Enter the SMTP server' }, { status: 400 })

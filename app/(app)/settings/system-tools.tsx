@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { Mail, Send, AlertTriangle, CheckCircle2, XCircle, Trash2, Save } from 'lucide-react'
+import { Mail, Send, AlertTriangle, CheckCircle2, XCircle, Trash2, Save, Lock, Circle } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface EmailStatus { host: string; port: string; user: string; from: string; passwordSet: boolean; source: 'settings' | 'environment' | 'none' }
+interface TestStep { key: string; label: string; ok: boolean | null; detail: string }
 
 export function EmailTestCard() {
   const [status, setStatus] = useState<EmailStatus | null>(null)
@@ -18,7 +19,7 @@ export function EmailTestCard() {
   const [saving, setSaving] = useState(false)
   const [to, setTo] = useState('')
   const [sending, setSending] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [result, setResult] = useState<{ ok: boolean; message: string; steps: TestStep[] } | null>(null)
 
   const load = () =>
     fetch('/api/settings/email').then(r => r.json()).then((s: EmailStatus) => {
@@ -43,14 +44,15 @@ export function EmailTestCard() {
     try {
       const res = await fetch('/api/settings/test-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to }) })
       const data = await res.json().catch(() => ({}))
+      const steps: TestStep[] = Array.isArray(data.steps) ? data.steps : []
       if (data.ok) {
-        setResult({ ok: true, message: `Test email sent to ${data.to}. Check the inbox (and junk folder).` })
+        setResult({ ok: true, message: `Test email sent to ${data.to}. Check the inbox (and junk folder).`, steps })
         toast.success('Test email sent')
       } else {
-        setResult({ ok: false, message: (data.stage === 'connect' ? 'Connection/login failed: ' : '') + (data.error ?? 'Failed to send') })
+        setResult({ ok: false, message: data.error ?? 'Failed to send', steps })
         toast.error('Test email failed')
       }
-    } catch { setResult({ ok: false, message: 'Request failed' }) } finally { setSending(false) }
+    } catch { setResult({ ok: false, message: 'Request failed', steps: [] }) } finally { setSending(false) }
   }
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -72,6 +74,7 @@ export function EmailTestCard() {
             <Input type="password" value={form.password} onChange={set('password')} placeholder={status.passwordSet ? '•••••••• (saved — leave blank to keep)' : 'Mailbox password or app password'} autoComplete="new-password" />
           </div>
           <div className="space-y-1"><Label>Sends from</Label><Input type="email" value={form.from} onChange={set('from')} placeholder="Same as login" /></div>
+          <p className="flex items-center gap-1.5 text-xs text-foreground"><Lock className="h-3.5 w-3.5 text-primary" />Encryption: {form.port.trim() === '465' ? 'SSL/TLS (implicit)' : 'STARTTLS, TLS 1.2 or newer (required by Office 365 on port 587)'}</p>
           <p className="text-xs text-muted-foreground">Saved in the app database. The password is never shown again or sent to the browser. Values saved here take priority over server environment variables.</p>
           <Button onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />{saving ? 'Saving…' : 'Save Email Settings'}</Button>
         </>)}
@@ -82,6 +85,19 @@ export function EmailTestCard() {
             <Button onClick={send} disabled={sending}><Send className="h-4 w-4 mr-1" />{sending ? 'Sending…' : 'Send Test'}</Button>
           </div>
         </div>
+        {result && result.steps.length > 0 && (
+          <ul className="space-y-2 rounded-lg bg-muted/50 p-3 text-sm">
+            {result.steps.map(s => (
+              <li key={s.key} className="flex items-start gap-2">
+                {s.ok === true ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-green-600" /> : s.ok === false ? <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-600" /> : <Circle className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />}
+                <span className="min-w-0">
+                  <span className={s.ok === null ? 'text-muted-foreground' : 'text-foreground'}>{s.label}{s.ok === null ? ' — not reached' : ''}</span>
+                  {s.detail && <span className="block break-words text-xs text-muted-foreground">{s.detail}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
         {result && (
           <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ${result.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
             {result.ok ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" /> : <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}

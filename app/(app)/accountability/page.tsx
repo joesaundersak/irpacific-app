@@ -1,8 +1,7 @@
-import { AccountabilityClient } from './accountability-client'
-import { ensureAccess } from '@/lib/access-server'
+import { redirect } from 'next/navigation'
 
-export default async function AccountabilityPage({ searchParams }: { searchParams: Promise<{ user?: string }> }) {
-  await ensureAccess('accountability')
+/** Old URL: the page is now called Action Items. */
+export default async function AccountabilityRedirect({ searchParams }: { searchParams: Promise<{ user?: string }> }) {
   const { user } = await searchParams
-  return <AccountabilityClient initialUser={user ?? 'all'} />
+  redirect(user ? `/action-items?user=${encodeURIComponent(user)}` : '/action-items')
 }

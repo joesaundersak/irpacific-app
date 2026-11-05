@@ -6,7 +6,7 @@ export const SECTIONS = [
   { key: 'forecast', label: 'Revenue Forecast', href: '/forecast' },
   { key: 'ap', label: 'AP Calendar', href: '/ap-calendar' },
   { key: 'meetings', label: 'Team Meetings', href: '/meetings' },
-  { key: 'accountability', label: 'Accountability', href: '/accountability' },
+  { key: 'accountability', label: 'Action Items', href: '/action-items' },
   { key: 'imports', label: 'Import Data', href: '/imports' },
   { key: 'settings', label: 'Settings (system config)', href: '/settings' },
   { key: 'users', label: 'Users & Access', href: '/settings' },

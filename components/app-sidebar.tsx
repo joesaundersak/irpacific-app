@@ -30,7 +30,7 @@ const navItems = [
   { href: '/forecast', label: 'Revenue Forecast', icon: BarChart3, keys: ['forecast'] },
   { href: '/ap-calendar', label: 'AP Calendar', icon: Calendar, keys: ['ap'] },
   { href: '/meetings', label: 'Team Meetings', icon: Users, keys: ['meetings'] },
-  { href: '/accountability', label: 'Accountability', icon: ClipboardCheck, keys: ['accountability'] },
+  { href: '/action-items', label: 'Action Items', icon: ClipboardCheck, keys: ['accountability'] },
   { href: '/imports', label: 'Import Data', icon: Upload, keys: ['imports'] },
   { href: '/settings', label: 'Settings', icon: Settings, keys: ['settings', 'users'] },
 ] as const

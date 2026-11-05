@@ -56,7 +56,7 @@ export function DashboardClient() {
     { label: 'Active Projects', value: String(data?.activeProjects ?? 0), icon: FolderKanban, color: 'text-blue-600' },
     { label: 'At-Risk Jobs', value: String(data?.atRiskCount ?? 0), icon: AlertTriangle, color: data?.atRiskCount ? 'text-red-500' : 'text-green-600' },
     { label: 'Stale Leads', value: String(data?.staleLeads ?? 0), icon: Clock, color: data?.staleLeads ? 'text-amber-500' : 'text-green-600' },
-    { label: 'Open Actions', value: String((data?.actionsByPerson ?? []).reduce((s: number, a: any) => s + a.count, 0)), icon: Users, color: 'text-purple-600', href: '/accountability' },
+    { label: 'Open Actions', value: String((data?.actionsByPerson ?? []).reduce((s: number, a: any) => s + a.count, 0)), icon: Users, color: 'text-purple-600', href: '/action-items' },
     { label: 'Missing Schedules', value: String(data?.missingScheduleCount ?? 0), icon: CalendarX, color: data?.missingScheduleCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=missing_schedule' },
     { label: 'No PM Assigned', value: String(data?.noPmCount ?? 0), icon: UserX, color: data?.noPmCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=no_pm' },
     { label: 'Missing Info', value: String(data?.missingInfoCount ?? 0), icon: FileWarning, color: data?.missingInfoCount ? 'text-amber-500' : 'text-green-600', href: '/projects?flag=missing_info' },
@@ -101,13 +101,13 @@ export function DashboardClient() {
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-medium flex items-center gap-2"><Users className="h-4 w-4 text-primary" />Open Action Items by Team Member</CardTitle>
-                <Link href="/accountability" className="text-xs text-primary hover:underline flex items-center gap-1">Manage<ArrowRight className="h-3 w-3" /></Link>
+                <Link href="/action-items" className="text-xs text-primary hover:underline flex items-center gap-1">Manage<ArrowRight className="h-3 w-3" /></Link>
               </div>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-3">
                 {(data?.actionsByPerson ?? []).map((p: any, i: number) => (
-                  <Link key={i} href={`/accountability?user=${p.id}`} className="flex items-center gap-2 bg-muted px-3 py-2 rounded-lg hover:bg-primary/10 hover:shadow-sm transition">
+                  <Link key={i} href={`/action-items?user=${p.id}`} className="flex items-center gap-2 bg-muted px-3 py-2 rounded-lg hover:bg-primary/10 hover:shadow-sm transition">
                     <span className="text-sm font-medium">{p.name}</span>
                     <Badge variant={p.count > 5 ? 'destructive' : 'secondary'}>{p.count}</Badge>
                     <ArrowRight className="h-3 w-3 text-muted-foreground" />
