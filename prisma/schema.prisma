@@ -252,6 +252,8 @@ model ActionItem {
   assigneeLocked Boolean @default(false)
   // Set when a person completes an auto-flag item; sync won't recreate it while the same gap remains
   dismissed   Boolean   @default(false)
+  // Picked/assigned during a meeting: listed under "Meeting Action Items" instead of "Suggested Actions"
+  committed   Boolean   @default(false)
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json()
-    const { description, assignedToId, dueDate, priority, meetingId, jobId, leadId, category, nextMeeting } = body ?? {}
+    const { description, assignedToId, dueDate, priority, meetingId, jobId, leadId, category, nextMeeting, committed } = body ?? {}
 
     if (!description) return NextResponse.json({ error: 'Description required' }, { status: 400 })
 
@@ -79,6 +79,7 @@ export async function POST(request: Request) {
         leadId: leadId ?? null,
         category: category ?? 'manual',
         source: 'manual',
+        committed: committed === true,
       },
     })
 
@@ -94,8 +95,9 @@ const PRIORITIES = ['high', 'medium', 'low']
 
 /** Turn a client patch into validated update data. Returns an error string for bad values. */
 async function buildUpdate(body: any): Promise<{ data: any } | { error: string }> {
-  const { status, description, dueDate, priority, assignedToId, meetingId } = body ?? {}
+  const { status, description, dueDate, priority, assignedToId, meetingId, committed } = body ?? {}
   const data: any = {}
+  if (committed !== undefined) data.committed = committed === true
   if (status !== undefined) {
     if (!STATUSES.includes(status)) return { error: 'Invalid status' }
     data.status = status
@@ -150,8 +152,8 @@ export async function PATCH(request: Request) {
     const ids: string[] = Array.isArray(body?.ids) ? body.ids.filter((x: any) => typeof x === 'string') : []
     if (ids.length === 0) return NextResponse.json({ error: 'Select at least one item' }, { status: 400 })
     if (ids.length > 1000) return NextResponse.json({ error: 'Too many items at once (max 1000)' }, { status: 400 })
-    const { assignedToId, dueDate, priority, status, meetingId } = body?.patch ?? {}
-    const built = await buildUpdate({ assignedToId, dueDate, priority, status, meetingId })
+    const { assignedToId, dueDate, priority, status, meetingId, committed } = body?.patch ?? {}
+    const built = await buildUpdate({ assignedToId, dueDate, priority, status, meetingId, committed })
     if ('error' in built) return NextResponse.json({ error: built.error }, { status: 400 })
     if (Object.keys(built.data).length === 0) return NextResponse.json({ error: 'Nothing to change' }, { status: 400 })
 

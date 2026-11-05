@@ -122,7 +122,6 @@ export function ProjectsClient() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Job Code</TableHead>
                     <TableHead>Project Name</TableHead>
                     <TableHead>PM</TableHead>
                     <TableHead>State</TableHead>
@@ -136,14 +135,13 @@ export function ProjectsClient() {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Loading...</TableCell></TableRow>
                   ) : jobs.length === 0 ? (
-                    <TableRow><TableCell colSpan={10} className="text-center py-8 text-muted-foreground">No projects found for these filters.</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">No projects found for these filters.</TableCell></TableRow>
                   ) : (
                     jobs.map((job: any) => (
                       <TableRow key={job.id}>
-                        <TableCell className="font-mono text-sm font-medium">{job.jobCode}</TableCell>
-                        <TableCell className="text-sm max-w-[250px] truncate">{job.jobName}</TableCell>
+                        <TableCell className="text-sm font-medium max-w-[360px] truncate" title={job.jobName}>{job.jobName}</TableCell>
                         <TableCell className="text-sm">{job.projectManager?.name ?? '—'}</TableCell>
                         <TableCell><Badge variant="outline" className="text-xs">{job.state ?? '—'}</Badge></TableCell>
                         <TableCell>
