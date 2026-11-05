@@ -2,83 +2,153 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { evaluateSchedule, isActiveJob, contractValue, isOpenLead } from '@/lib/schedule-rules'
+import { loadModel, MonthBuckets, defaultDurationDays, forecastInstall, forecastProduct } from '@/lib/forecast-model'
 
-export async function GET() {
+const DAY = 86400000
+const addDays = (d: Date, n: number) => new Date(d.getTime() + n * DAY)
+const r = (n: number) => Math.round(n)
+
+export async function GET(request: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const jobs = await prisma.job.findMany({
-      where: { status: 'OPEN' },
-      select: {
-        totalRevisedPrice: true, actualCosts: true, percentComplete: true,
-        projectedCompletion: true, projectedStart: true,
-      },
-    })
+    const sp = new URL(request.url).searchParams
+    const includeLeads = sp.get('includeLeads') === 'true'
+    const minConfidence = Math.min(100, Math.max(0, parseFloat(sp.get('minConfidence') ?? '60') || 0))
+    const state = sp.get('state') || ''
+    const pm = sp.get('pm') || ''
+    const type = sp.get('type') || 'all'
+    const monthsCount = Math.min(36, Math.max(3, parseInt(sp.get('months') ?? '12') || 12))
 
-    const leads = await prisma.lead.findMany({
-      where: { leadStatus: { not: 'Closed' } },
-      select: {
-        estimatedRevMin: true, estimatedRevMax: true, confidence: true,
-        projectedSalesDate: true, projectStart: true, substantialCompletion: true,
-      },
-    })
+    const configs = await prisma.systemConfig.findMany()
+    const configMap: Record<string, string> = {}
+    configs.forEach((c: any) => { configMap[c.key] = c.value })
+    const model = loadModel(configMap)
 
-    // Generate monthly forecast for next 12 months
     const now = new Date()
-    const months: string[] = []
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    const total = new MonthBuckets(now, monthsCount)
+    const months = total.months
+    const projRow = new Array(monthsCount).fill(0)
+    const leadRow = new Array(monthsCount).fill(0)
+    let beyondProjects = 0, beyondLeads = 0
+
+    // ---------- Projects: active jobs WITH a schedule only ----------
+    const jobs = await prisma.job.findMany({
+      where: {
+        status: 'OPEN',
+        ...(state ? { state } : {}),
+        ...(pm === 'none' ? { projectManagerId: null } : pm ? { projectManagerId: pm } : {}),
+      },
+      include: {
+        projectManager: { select: { name: true } },
+        milestones: { select: { phase: true, title: true, startDate: true, endDate: true } },
+      },
+    })
+
+    const projects: any[] = []
+    const excludedJobs: any[] = []
+    let excludedValue = 0
+
+    for (const job of jobs as any[]) {
+      if (!isActiveJob(job)) continue
+      const contract = contractValue(job)
+      const billed = Math.min(contract, Math.max(job.amountInvoiced ?? 0, contract * Math.min(100, job.percentComplete ?? 0) / 100))
+      const remaining = Math.max(0, contract - billed)
+      const ev = evaluateSchedule(job, job.milestones)
+      if (type !== 'all' && ev.type !== type) continue
+      if (!ev.hasSchedule) {
+        if (remaining > 0) {
+          excludedValue += remaining
+          excludedJobs.push({ id: job.id, jobCode: job.jobCode, name: job.jobName, pm: job.projectManager?.name ?? job.projectManagerName ?? null, remaining: r(remaining), type: ev.type })
+        }
+        continue
+      }
+      if (remaining <= 0) continue
+
+      const starts = ev.phases.map(p => p.start).filter(Boolean) as Date[]
+      const ends = ev.phases.map(p => p.end).filter(Boolean) as Date[]
+      const start = starts.length ? new Date(Math.min(...starts.map(d => d.getTime()))) : (job.projectedStart ?? job.actualStart ?? now)
+      let end = ends.length ? new Date(Math.max(...ends.map(d => d.getTime()))) : null
+      if (!end || end <= start) end = job.projectedCompletion && job.projectedCompletion > start ? (job.projectedCompletion as Date) : addDays(start, defaultDurationDays(contract))
+      const endDate: Date = end as Date
+
+      const b = new MonthBuckets(now, monthsCount)
+      if (ev.type === 'product') {
+        const po = ev.phases.find(p => p.key === 'po')?.start ?? start
+        const delivery = ev.phases.find(p => p.key === 'delivery')?.end ?? endDate
+        forecastProduct(b, model, { contract, billed, po, delivery })
+      } else {
+        forecastInstall(b, model, { contract, billed, start, end: endDate, schedule: ev })
+      }
+      b.values.forEach((v, i) => { projRow[i] += v })
+      beyondProjects += b.beyond
+      projects.push({
+        id: job.id, jobCode: job.jobCode, name: job.jobName, type: ev.type,
+        pm: job.projectManager?.name ?? job.projectManagerName ?? null,
+        contract: r(contract), remaining: r(remaining), missing: ev.missing,
+        start: start.toISOString(), end: endDate.toISOString(),
+        monthly: b.values.map(r), beyond: r(b.beyond),
+      })
     }
 
-    const forecast = months.map((month: string) => {
-      // Conservative: awarded jobs only
-      let conservative = 0
-      for (const job of jobs) {
-        const remaining = (job.totalRevisedPrice ?? 0) - ((job.totalRevisedPrice ?? 0) * (job.percentComplete ?? 0) / 100)
-        if (remaining > 0 && job.projectedCompletion) {
-          const completionMonth = `${job.projectedCompletion.getFullYear()}-${String(job.projectedCompletion.getMonth() + 1).padStart(2, '0')}`
-          const startMonth = job.projectedStart
-            ? `${job.projectedStart.getFullYear()}-${String(job.projectedStart.getMonth() + 1).padStart(2, '0')}`
-            : months[0]
-          if (month >= (startMonth ?? months[0]) && month <= completionMonth) {
-            const monthsSpan = Math.max(1, monthDiff(job.projectedStart ?? now, job.projectedCompletion))
-            conservative += remaining / monthsSpan
-          }
-        }
-      }
-
-      // Base: + weighted leads
-      let baseAdd = 0
-      for (const lead of leads) {
+    // ---------- Leads: open opportunities at or above the confidence threshold ----------
+    const leadsOut: any[] = []
+    if (includeLeads && type !== 'product') {
+      const leads = await prisma.lead.findMany({
+        where: {
+          ...(state ? { stateOpp: state } : {}),
+          ...(pm === 'none' ? { salespersonId: null } : pm ? { salespersonId: pm } : {}),
+        },
+        include: { salesperson: { select: { name: true } } },
+      })
+      for (const lead of leads as any[]) {
+        if (!isOpenLead(lead)) continue
+        const conf = (lead.confidence ?? 0) > 1 ? (lead.confidence ?? 0) / 100 : (lead.confidence ?? 0)
+        if (conf * 100 < minConfidence || conf <= 0) continue
         const mid = ((lead.estimatedRevMin ?? 0) + (lead.estimatedRevMax ?? 0)) / 2
-        const weighted = mid * (lead.confidence ?? 0)
-        if (weighted > 0) baseAdd += weighted / 12
+        const value = mid * conf
+        if (value <= 0) continue
+        let start: Date = lead.projectStart ?? (lead.projectedSalesDate ? addDays(lead.projectedSalesDate, 30) : addDays(now, 30))
+        if (start < now) start = addDays(now, 30) // stale dates: assume work starts ~30 days out
+        let end: Date = lead.substantialCompletion && lead.substantialCompletion > start ? lead.substantialCompletion : addDays(start, defaultDurationDays(mid))
+        const b = new MonthBuckets(now, monthsCount)
+        forecastInstall(b, model, { contract: value, billed: 0, start, end })
+        b.values.forEach((v, i) => { leadRow[i] += v })
+        beyondLeads += b.beyond
+        leadsOut.push({
+          id: lead.id, title: lead.opportunityTitle, confidence: r(conf * 100),
+          salesperson: lead.salesperson?.name ?? lead.salespersonName ?? null,
+          fullValue: r(mid), value: r(value), start: start.toISOString(), end: end.toISOString(),
+          monthly: b.values.map(r), beyond: r(b.beyond),
+        })
       }
+    }
 
-      // Optimistic: + all leads at face value
-      let optAdd = 0
-      for (const lead of leads) {
-        const mid = ((lead.estimatedRevMin ?? 0) + (lead.estimatedRevMax ?? 0)) / 2
-        optAdd += mid / 12
-      }
+    const rows = months.map((month, i) => ({
+      month, projects: r(projRow[i]), leads: r(leadRow[i]), total: r(projRow[i] + leadRow[i]),
+    }))
 
-      return {
-        month,
-        conservative: Math.round(conservative),
-        base: Math.round(conservative + baseAdd),
-        optimistic: Math.round(conservative + optAdd),
-      }
+    projects.sort((a, b) => b.remaining - a.remaining)
+    leadsOut.sort((a, b) => b.value - a.value)
+    excludedJobs.sort((a, b) => b.remaining - a.remaining)
+
+    return NextResponse.json({
+      months,
+      rows,
+      projects,
+      leads: leadsOut,
+      excluded: { count: excludedJobs.length, value: r(excludedValue), jobs: excludedJobs },
+      beyond: { projects: r(beyondProjects), leads: r(beyondLeads) },
+      totals: {
+        projects: r(projRow.reduce((s, v) => s + v, 0)),
+        leads: r(leadRow.reduce((s, v) => s + v, 0)),
+      },
+      model: { phases: model.phases.map(p => ({ label: p.label, bill: Math.round(p.bill * 100), time: Math.round(p.time * 100) })), productDeposit: Math.round(model.productDeposit * 100) },
     })
-
-    return NextResponse.json({ forecast, months })
   } catch (error: any) {
     console.error('Forecast error:', error)
     return NextResponse.json({ error: 'Failed to load forecast' }, { status: 500 })
   }
-}
-
-function monthDiff(start: Date, end: Date): number {
-  return (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth() + 1
 }

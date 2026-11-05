@@ -1,13 +1,14 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useSession } from 'next-auth/react'
 import { PageHeader } from '@/components/layouts/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
-import { TrendingUp, AlertCircle, Clock, DollarSign, ArrowUpDown, UserPlus } from 'lucide-react'
+import { TrendingUp, AlertCircle, Clock, DollarSign, ArrowUpDown, UserPlus, UserX } from 'lucide-react'
 import { formatCurrency, formatPercent, formatDate, daysSince } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
 import { toast } from 'sonner'
@@ -20,6 +21,7 @@ interface Lead {
   salesperson: { id: string; name: string } | null
   linkedJob: { id: string; jobCode: string } | null
   email: string | null; phone: string | null; cellPhone: string | null
+  noPm: boolean; salespersonName: string | null
 }
 
 export function PipelineClient() {
@@ -28,11 +30,14 @@ export function PipelineClient() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState({ salesperson: '', stale: '', status: '' })
   const [users, setUsers] = useState<any[]>([])
+  const { data: session } = useSession() || {}
+  const canAssign = session?.user?.role === 'Admin' || session?.user?.role === 'Office Manager'
 
   const loadData = useCallback(() => {
     const params = new URLSearchParams()
     if (filter.salesperson) params.set('salesperson', filter.salesperson)
     if (filter.stale === 'true') params.set('stale', 'true')
+    if (filter.stale === 'nopm') params.set('noPm', 'true')
     if (filter.status) params.set('status', filter.status)
 
     fetch(`/api/pipeline?${params}`)
@@ -64,13 +69,26 @@ export function PipelineClient() {
     } catch { toast.error('Failed to convert lead') }
   }
 
+  const handleAssign = async (leadId: string, userId: string) => {
+    try {
+      const res = await fetch('/api/pipeline', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: leadId, salespersonId: userId }),
+      })
+      const data = await res.json()
+      if (res.ok) { toast.success('Project manager assigned'); loadData() }
+      else toast.error(data.error ?? 'Failed to assign')
+    } catch { toast.error('Failed to assign project manager') }
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader title="Sales Pipeline" description="Track leads, proposals, and conversion opportunities" />
 
       {/* Summary Strip */}
       <FadeIn>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card><CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-muted text-primary"><TrendingUp className="h-4 w-4" /></div>
             <div><p className="text-xs text-muted-foreground">Total Leads</p><p className="text-lg font-bold">{summary?.totalLeads ?? 0}</p></div>
@@ -86,6 +104,10 @@ export function PipelineClient() {
           <Card><CardContent className="p-4 flex items-center gap-3">
             <div className="p-2 rounded-lg bg-muted text-amber-500"><Clock className="h-4 w-4" /></div>
             <div><p className="text-xs text-muted-foreground">Stale Leads</p><p className="text-lg font-bold">{summary?.staleCount ?? 0}</p></div>
+          </CardContent></Card>
+          <Card className="cursor-pointer" onClick={() => setFilter(f => ({ ...f, stale: 'nopm' }))}><CardContent className="p-4 flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-muted text-red-600"><UserX className="h-4 w-4" /></div>
+            <div><p className="text-xs text-muted-foreground">No PM Assigned</p><p className="text-lg font-bold text-red-600">{summary?.noPmCount ?? 0}</p></div>
           </CardContent></Card>
         </div>
       </FadeIn>
@@ -106,6 +128,7 @@ export function PipelineClient() {
               <SelectContent>
                 <SelectItem value="all">All Leads</SelectItem>
                 <SelectItem value="true">Stale Only</SelectItem>
+                <SelectItem value="nopm">No PM Assigned</SelectItem>
               </SelectContent>
             </Select>
           </CardContent>
@@ -150,7 +173,21 @@ export function PipelineClient() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell className="text-sm">{lead.salesperson?.name ?? '—'}</TableCell>
+                        <TableCell className="text-sm">
+                          {lead.noPm ? (
+                            <div className="space-y-1">
+                              <Badge className="text-[10px] bg-red-100 text-red-700" title={lead.salespersonName ? `BuilderTrend: ${lead.salespersonName}` : 'No salesperson in BuilderTrend'}>No PM</Badge>
+                              {canAssign && (
+                                <Select onValueChange={(v) => handleAssign(lead.id, v)}>
+                                  <SelectTrigger className="h-7 w-[140px] text-xs"><SelectValue placeholder="Assign…" /></SelectTrigger>
+                                  <SelectContent>
+                                    {users.map((u: any) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
+                          ) : (lead.salesperson?.name ?? '—')}
+                        </TableCell>
                         <TableCell className="text-right text-sm">
                           {formatCurrency(lead.estimatedRevMin)} – {formatCurrency(lead.estimatedRevMax)}
                         </TableCell>

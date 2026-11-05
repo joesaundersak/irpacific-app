@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { evaluateSchedule, isActiveJob } from '@/lib/schedule-rules'
+import { safeSyncFlags } from '@/lib/flags'
 
 export async function GET(
   _request: Request,
@@ -35,8 +37,16 @@ export async function GET(
       ? ((job.totalRevisedPrice - job.actualCosts) / job.totalRevisedPrice) * 100
       : job.projectedProfitPct
 
+    const ev = evaluateSchedule(job, job.milestones)
     const serialized = {
       ...job,
+      isActive: isActiveJob(job),
+      scheduleEval: {
+        type: ev.type,
+        missing: ev.missing,
+        complete: ev.complete,
+        phases: ev.phases.map(p => ({ ...p, start: p.start?.toISOString() ?? null, end: p.end?.toISOString() ?? null })),
+      },
       computedMargin: margin,
       marginHealth: margin >= targetMargin ? 'green' : margin >= 15 ? 'yellow' : 'red',
       targetMargin,
@@ -72,5 +82,43 @@ export async function GET(
   } catch (error: any) {
     console.error('Project detail error:', error)
     return NextResponse.json({ error: 'Failed to load project' }, { status: 500 })
+  }
+}
+
+/** Assign the PM (Admin / Office Manager) or set the schedule type (also the job's own PM). */
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    const { id } = await params
+    const job = await prisma.job.findUnique({ where: { id } })
+    if (!job) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+
+    const role = session.user.role
+    const isManager = role === 'Admin' || role === 'Office Manager'
+    const body = await request.json()
+    const data: any = {}
+
+    if (body?.projectManagerId !== undefined) {
+      if (!isManager) return NextResponse.json({ error: 'Only Admin or Office Manager can assign project managers' }, { status: 403 })
+      data.projectManagerId = body.projectManagerId || null
+    }
+    if (body?.scheduleType !== undefined) {
+      if (!isManager && job.projectManagerId !== session.user.id) {
+        return NextResponse.json({ error: 'You can only change your assigned projects' }, { status: 403 })
+      }
+      data.scheduleType = body.scheduleType === 'install' || body.scheduleType === 'product' ? body.scheduleType : null
+    }
+    if (Object.keys(data).length === 0) return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
+
+    await prisma.job.update({ where: { id }, data })
+    await safeSyncFlags()
+    return NextResponse.json({ ok: true })
+  } catch (error: any) {
+    console.error('Project update error:', error)
+    return NextResponse.json({ error: 'Failed to update project' }, { status: 500 })
   }
 }

@@ -15,11 +15,16 @@ import { formatCurrency, formatCurrencyFull, formatPercent, formatDate } from '@
 import { FadeIn } from '@/components/ui/animate'
 import { toast } from 'sonner'
 import { useSession } from 'next-auth/react'
+import { ScheduleRequirements } from './schedule-requirements'
 
 export function ProjectDetailClient({ projectId }: { projectId: string }) {
   const [job, setJob] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const { data: session } = useSession()
+  const { data: session } = useSession() || {}
+  const [users, setUsers] = useState<any[]>([])
+  useEffect(() => {
+    fetch('/api/users').then(r => r.json()).then(d => setUsers(d.users ?? [])).catch(console.error)
+  }, [])
 
   const loadJob = () => {
     fetch(`/api/projects/${projectId}`)
@@ -48,6 +53,11 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
   const marginColor = job.marginHealth === 'green' ? 'text-green-600' : job.marginHealth === 'yellow' ? 'text-amber-600' : 'text-red-600'
   const costVariance = (job.projectedCosts ?? 0) - (job.actualCosts ?? 0)
+  const role = session?.user?.role
+  const canManage = role === 'Admin' || role === 'Office Manager'
+  const canEdit = canManage || job.projectManagerId === session?.user?.id
+  const scheduleIncomplete = job.isActive && job.scheduleEval && !job.scheduleEval.complete
+  const noPm = job.isActive && !job.projectManagerId
 
   return (
     <div className="space-y-6">
@@ -59,7 +69,15 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
         />
       </div>
 
-      <Tabs defaultValue="financial" className="space-y-4">
+      {(scheduleIncomplete || noPm) && (
+        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <AlertTriangle className="h-4 w-4" />
+          {noPm && <span><strong>No project manager assigned.</strong></span>}
+          {scheduleIncomplete && <span><strong>Schedule incomplete:</strong> {job.scheduleEval.missing.join(', ')} — see the Schedule tab. Excluded from the forecast until a schedule is entered.</span>}
+        </div>
+      )}
+
+      <Tabs defaultValue={scheduleIncomplete ? 'schedule' : 'financial'} className="space-y-4">
         <TabsList>
           <TabsTrigger value="financial"><DollarSign className="h-3 w-3 mr-1" />Financial</TabsTrigger>
           <TabsTrigger value="schedule"><Calendar className="h-3 w-3 mr-1" />Schedule</TabsTrigger>
@@ -111,7 +129,8 @@ export function ProjectDetailClient({ projectId }: { projectId: string }) {
 
         {/* Schedule Tab */}
         <TabsContent value="schedule">
-          <FadeIn>
+          <FadeIn className="space-y-4">
+            <ScheduleRequirements job={job} canEdit={canEdit} canManage={canManage} users={users} onChange={loadJob} />
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">

@@ -50,6 +50,8 @@ model Job {
   groups            String?
   contractType      String?
   prefix            String?
+  projectManagerName String?
+  scheduleType      String?   // null = auto-detect; 'install' | 'product'
 
   // Client info
   clientName        String?
@@ -155,6 +157,7 @@ model Lead {
   isStale           Boolean   @default(false)
 
   // Relations
+  salespersonName   String?
   salespersonId     String?
   salesperson       User?     @relation("Salesperson", fields: [salespersonId], references: [id])
   linkedJobId       String?

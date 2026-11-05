@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { safeSyncFlags } from '@/lib/flags'
 
 export async function POST(
   request: Request,
@@ -37,6 +38,7 @@ export async function POST(
       },
     })
 
+    await safeSyncFlags()
     return NextResponse.json(milestone)
   } catch (error: any) {
     console.error('Create milestone error:', error)
@@ -77,6 +79,7 @@ export async function PUT(
       data: updateData,
     })
 
+    await safeSyncFlags()
     return NextResponse.json(milestone)
   } catch (error: any) {
     console.error('Update milestone error:', error)

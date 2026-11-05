@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { safeSyncFlags, FLAG_SOURCE } from '@/lib/flags'
 
 export async function GET() {
   try {
@@ -67,6 +68,13 @@ export async function POST(request: Request) {
 
     // Auto-generate action items from system alerts
     await generateAutoActionItems(meeting.id)
+
+    // Accountability flags (missing schedule / no PM): refresh and put all open ones on this meeting's agenda
+    await safeSyncFlags()
+    await prisma.actionItem.updateMany({
+      where: { source: FLAG_SOURCE, status: { not: 'complete' }, meetingId: null },
+      data: { meetingId: meeting.id },
+    })
 
     return NextResponse.json({ id: meeting.id })
   } catch (error: any) {

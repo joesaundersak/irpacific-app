@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/layouts/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
-  TrendingUp, FolderKanban, AlertTriangle, Clock, Users, Upload, ArrowRight,
+  TrendingUp, FolderKanban, AlertTriangle, Clock, Users, Upload, ArrowRight, CalendarX, UserX,
 } from 'lucide-react'
 import { formatCurrency, formatPercent, formatDate } from '@/lib/format'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/animate'
@@ -21,6 +21,8 @@ interface DashboardData {
   top5AtRisk: { id: string; jobCode: string; jobName: string; pm: string; margin: number }[]
   upcomingMilestones: { id: string; title: string; phase: string; endDate: string; jobCode: string; jobName: string }[]
   targetMargin: number
+  missingScheduleCount: number
+  noPmCount: number
 }
 
 export function DashboardClient() {
@@ -39,8 +41,8 @@ export function DashboardClient() {
     return (
       <div className="space-y-6">
         <PageHeader title="Dashboard" description="Operations overview" />
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {[1,2,3,4,5].map((i) => (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          {[1,2,3,4,5,6,7].map((i) => (
             <Card key={i} className="animate-pulse"><CardContent className="p-6"><div className="h-16 bg-muted rounded" /></CardContent></Card>
           ))}
         </div>
@@ -54,16 +56,27 @@ export function DashboardClient() {
     { label: 'At-Risk Jobs', value: String(data?.atRiskCount ?? 0), icon: AlertTriangle, color: data?.atRiskCount ? 'text-red-500' : 'text-green-600' },
     { label: 'Stale Leads', value: String(data?.staleLeads ?? 0), icon: Clock, color: data?.staleLeads ? 'text-amber-500' : 'text-green-600' },
     { label: 'Open Actions', value: String((data?.actionsByPerson ?? []).reduce((s: number, a: any) => s + a.count, 0)), icon: Users, color: 'text-purple-600' },
+    { label: 'Missing Schedules', value: String(data?.missingScheduleCount ?? 0), icon: CalendarX, color: data?.missingScheduleCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=missing_schedule' },
+    { label: 'No PM Assigned', value: String(data?.noPmCount ?? 0), icon: UserX, color: data?.noPmCount ? 'text-red-500' : 'text-green-600', href: '/projects?flag=no_pm' },
   ]
 
   return (
     <div className="space-y-6">
       <PageHeader title="Dashboard" description="Real-time operations overview for Interior Resources" />
       <FadeIn>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {kpis.map((kpi, i) => (
-            <Card key={i}>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          {kpis.map((kpi: any, i) => (
+            <Card key={i} className={kpi.href ? 'hover:shadow-md transition-shadow' : ''}>
               <CardContent className="p-4">
+                {kpi.href ? (
+                  <Link href={kpi.href} className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg bg-muted ${kpi.color}`}><kpi.icon className="h-4 w-4" /></div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">{kpi.label}</p>
+                      <p className="text-lg font-bold tracking-tight">{kpi.value}</p>
+                    </div>
+                  </Link>
+                ) : (
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg bg-muted ${kpi.color}`}>
                     <kpi.icon className="h-4 w-4" />
@@ -73,6 +86,7 @@ export function DashboardClient() {
                     <p className="text-lg font-bold tracking-tight">{kpi.value}</p>
                   </div>
                 </div>
+                )}
               </CardContent>
             </Card>
           ))}

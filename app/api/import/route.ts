@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { safeSyncFlags } from '@/lib/flags'
 import { detectFileType, extractJobCode, parseExcelBuffer, parseExcelDate, parseAmount, parsePercentage } from '@/lib/import-parser'
 
 export async function POST(request: Request) {
@@ -43,6 +44,12 @@ export async function POST(request: Request) {
       const result = await processLeads(rows, fileType)
       added = result.added; updated = result.updated; unchanged = result.unchanged
       warnings.push(...result.warnings)
+    }
+
+    // Re-evaluate accountability flags (missing schedule / no PM) against the fresh data
+    const flags = await safeSyncFlags()
+    if (flags && (flags.created || flags.resolved)) {
+      warnings.push(`Accountability flags: ${flags.created} new action item(s), ${flags.resolved} resolved`)
     }
 
     // Save import history
@@ -124,6 +131,7 @@ async function processJobsites(rows: Record<string, any>[], userId: string) {
       originalBudget: parseAmount(row['Original Budget Costs']),
       revisedBudget: parseAmount(row['Revised Budget Costs']),
       projectManagerId: pmId,
+      projectManagerName: pmName || null,
       actualStart: parseExcelDate(row['Actual Start']),
       actualCompletion: parseExcelDate(row['Actual Completion']),
       projectedStart: parseExcelDate(row['Proj. Start']),
@@ -133,7 +141,8 @@ async function processJobsites(rows: Record<string, any>[], userId: string) {
 
     const existing = await prisma.job.findUnique({ where: { jobCode } })
     if (existing) {
-      await prisma.job.update({ where: { jobCode }, data })
+      // Keep a PM assigned in the app when BuilderTrend has none mapped to a login
+      await prisma.job.update({ where: { jobCode }, data: pmId ? data : { ...data, projectManagerId: undefined } })
       updated++
     } else {
       await prisma.job.create({ data: { jobCode, ...data } })
@@ -210,6 +219,15 @@ async function processWIP(rows: Record<string, any>[]) {
 
 async function processSchedule(rows: Record<string, any>[]) {
   let added = 0, updated = 0, unchanged = 0
+  // Re-import safe: rows are matched to existing records; imported milestones that vanished from
+  // BuilderTrend are removed for the jobs in this file. Manually entered milestones are never touched.
+  const jobCache = new Map<string, any>()
+  const getJob = async (code: string) => {
+    if (!jobCache.has(code)) jobCache.set(code, await prisma.job.findUnique({ where: { jobCode: code }, select: { id: true } }))
+    return jobCache.get(code)
+  }
+  const touchedMilestones = new Set<string>()
+  const sameTime = (a: Date | null) => a ?? null
 
   for (const row of rows) {
     const jobField = String(row['Job'] ?? '').trim()
@@ -228,43 +246,58 @@ async function processSchedule(rows: Record<string, any>[]) {
     if (phase.toUpperCase() === 'AP') {
       // AP entry
       if (!jobCode) continue
-      const job = await prisma.job.findUnique({ where: { jobCode } })
+      const job = await getJob(jobCode)
       if (!job) continue
 
       const amount = parseAmount(title) // Title stores dollar amount for AP
-      await prisma.aPEntry.create({
-        data: {
-          jobId: job.id,
-          vendorName: assignedTo,
-          amount,
-          dueDate: startDate,
-          isPaid: isComplete,
-          title: title,
-        },
+      const existingAp = await prisma.aPEntry.findFirst({
+        where: { jobId: job.id, title, vendorName: assignedTo, dueDate: sameTime(startDate) },
       })
-      added++
+      if (existingAp) {
+        // Keep an in-app "paid" mark even if BuilderTrend hasn't caught up
+        await prisma.aPEntry.update({ where: { id: existingAp.id }, data: { amount, isPaid: existingAp.isPaid || isComplete } })
+        updated++
+      } else {
+        await prisma.aPEntry.create({
+          data: { jobId: job.id, vendorName: assignedTo, amount, dueDate: startDate, isPaid: isComplete, title },
+        })
+        added++
+      }
     } else {
       // Milestone / schedule item
       if (!jobCode) continue
-      const job = await prisma.job.findUnique({ where: { jobCode } })
+      const job = await getJob(jobCode)
       if (!job) continue
 
-      await prisma.milestone.create({
-        data: {
-          jobId: job.id,
-          phase: phase || 'General',
-          title,
-          startDate,
-          endDate,
-          isComplete,
-          percentComplete: Math.round(percentComplete),
-          duration: Math.round(duration),
-          assignedTo,
-          source: 'import',
-        },
+      const data = {
+        startDate, endDate, isComplete,
+        percentComplete: Math.round(percentComplete),
+        duration: Math.round(duration),
+        assignedTo,
+      }
+      const existingMs = await prisma.milestone.findFirst({
+        where: { jobId: job.id, source: 'import', phase: phase || 'General', title, startDate: sameTime(startDate), id: { notIn: [...touchedMilestones] } },
       })
-      added++
+      if (existingMs) {
+        await prisma.milestone.update({ where: { id: existingMs.id }, data })
+        touchedMilestones.add(existingMs.id)
+        updated++
+      } else {
+        const created = await prisma.milestone.create({
+          data: { jobId: job.id, phase: phase || 'General', title, ...data, source: 'import' },
+        })
+        touchedMilestones.add(created.id)
+        added++
+      }
     }
+  }
+
+  // Remove imported milestones (and duplicates from earlier imports) no longer in BuilderTrend for these jobs
+  const jobIds = [...jobCache.values()].filter(Boolean).map((j: any) => j.id)
+  if (jobIds.length) {
+    await prisma.milestone.deleteMany({
+      where: { jobId: { in: jobIds }, source: 'import', id: { notIn: [...touchedMilestones] } },
+    })
   }
 
   return { added, updated, unchanged }
@@ -322,6 +355,7 @@ async function processLeads(rows: Record<string, any>[], type: string) {
       projectType: String(row['Project Type'] ?? '').trim() || null,
       source: String(row['Source'] ?? '').trim() || null,
       salespersonId: spId,
+      salespersonName: String(row['Salesperson'] ?? '').trim() || null,
       createdDate,
       lastContacted,
       lastActivityDate: lastActivity,
@@ -367,7 +401,8 @@ async function processLeads(rows: Record<string, any>[], type: string) {
     // Upsert by opportunity title
     const existing = await prisma.lead.findFirst({ where: { opportunityTitle: oppTitle } })
     if (existing) {
-      await prisma.lead.update({ where: { id: existing.id }, data })
+      // Keep a PM assigned in the app when BuilderTrend has none mapped to a login
+      await prisma.lead.update({ where: { id: existing.id }, data: spId ? data : { ...data, salespersonId: undefined } })
       updated++
     } else {
       await prisma.lead.create({ data: { opportunityTitle: oppTitle, ...data } })
