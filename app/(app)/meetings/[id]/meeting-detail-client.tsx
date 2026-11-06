@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { ArrowLeft, Send, Plus, CheckCircle, Clock, AlertTriangle, Users, Trophy, ListChecks, ArrowUp, Undo2 } from 'lucide-react'
+import { ArrowLeft, Send, Plus, CheckCircle, Clock, AlertTriangle, Users, Trophy, ListChecks, ArrowUp, Undo2, Search, X } from 'lucide-react'
 import { itemHeading, itemBullets } from '@/lib/action-item-display'
 import { formatDate } from '@/lib/format'
 import { FadeIn } from '@/components/ui/animate'
@@ -21,6 +21,8 @@ import { useRouter } from 'next/navigation'
 import { DeleteMeetingButton } from '@/components/delete-meeting-button'
 
 const POLL_MS = 5000
+const EMPTY_FILTERS = { q: '', assignee: 'all', category: 'all', priority: 'all', kind: 'all', source: 'all' }
+const categoryLabel = (c: string) => c.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase()).replace(/\bPm\b/, 'PM')
 
 function ItemDescription({ item }: { item: any }) {
   const heading = itemHeading(item)
@@ -82,14 +84,37 @@ export function MeetingDetailClient({ meetingId, canDelete = false }: { meetingI
   const committed = useMemo(() => items.filter(i => i.committed), [items])
   const suggested = useMemo(() => items.filter(i => !i.committed), [items])
 
-  // Drop selections for items that moved or disappeared (e.g. someone else moved them)
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const setFilter = (k: keyof typeof EMPTY_FILTERS, v: string) => setFilters(f => ({ ...f, [k]: v }))
+  const filtersActive = (Object.keys(EMPTY_FILTERS) as (keyof typeof EMPTY_FILTERS)[]).some(k => filters[k] !== EMPTY_FILTERS[k])
+  const categories = useMemo(() => [...new Set(suggested.map(i => i.category).filter(Boolean))].sort() as string[], [suggested])
+  const visibleSuggested = useMemo(() => {
+    const q = filters.q.trim().toLowerCase()
+    return suggested.filter(i => {
+      if (filters.assignee === 'none' ? i.assignedToId : filters.assignee !== 'all' && i.assignedToId !== filters.assignee) return false
+      if (filters.category !== 'all' && i.category !== filters.category) return false
+      if (filters.priority !== 'all' && i.priority !== filters.priority) return false
+      const kind = i.jobId ? 'job' : i.leadId ? 'lead' : 'other'
+      if (filters.kind !== 'all' && kind !== filters.kind) return false
+      const auto = i.source === 'auto-flag'
+      if (filters.source === 'auto' && !auto) return false
+      if (filters.source === 'manual' && auto) return false
+      if (q) {
+        const hay = [itemHeading(i), i.description, i.assignedTo?.name, i.category].filter(Boolean).join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [suggested, filters])
+
+  // Keep selections only for items still shown (moved, removed by someone else, or filtered out)
   useEffect(() => {
     setSelected(prev => {
-      const ids = new Set(suggested.map(i => i.id))
+      const ids = new Set(visibleSuggested.map(i => i.id))
       const next = new Set([...prev].filter(id => ids.has(id)))
       return next.size === prev.size ? prev : next
     })
-  }, [suggested])
+  }, [visibleSuggested])
 
   const saveNotes = async () => {
     const res = await fetch(`/api/meetings/${meetingId}`, {
@@ -336,9 +361,59 @@ export function MeetingDetailClient({ meetingId, canDelete = false }: { meetingI
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <CardTitle className="text-sm font-medium flex items-center gap-2"><Users className="h-4 w-4 text-primary" />Suggested Actions ({suggested.length})</CardTitle>
+              <CardTitle className="text-sm font-medium flex items-center gap-2"><Users className="h-4 w-4 text-primary" />Suggested Actions ({filtersActive ? `${visibleSuggested.length} of ${suggested.length}` : suggested.length})</CardTitle>
               {selected.size > 0 && (
                 <Button size="sm" onClick={moveSelected}><ArrowUp className="h-3 w-3 mr-1" />Move {selected.size} to Meeting Action Items</Button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <div className="relative">
+                <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input value={filters.q} onChange={e => setFilter('q', e.target.value)} placeholder="Search job, lead or action" className="h-8 text-xs pl-8 w-[220px]" />
+              </div>
+              <Select value={filters.assignee} onValueChange={v => setFilter('assignee', v)}>
+                <SelectTrigger className="h-8 text-xs w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All assignees</SelectItem>
+                  <SelectItem value="none">Unassigned</SelectItem>
+                  {users.map((u: any) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={filters.category} onValueChange={v => setFilter('category', v)}>
+                <SelectTrigger className="h-8 text-xs w-[170px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All categories</SelectItem>
+                  {categories.map(c => <SelectItem key={c} value={c}>{categoryLabel(c)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={filters.priority} onValueChange={v => setFilter('priority', v)}>
+                <SelectTrigger className="h-8 text-xs w-[130px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All priorities</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filters.kind} onValueChange={v => setFilter('kind', v)}>
+                <SelectTrigger className="h-8 text-xs w-[130px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Jobs & leads</SelectItem>
+                  <SelectItem value="job">Jobs only</SelectItem>
+                  <SelectItem value="lead">Leads only</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filters.source} onValueChange={v => setFilter('source', v)}>
+                <SelectTrigger className="h-8 text-xs w-[140px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Auto & manual</SelectItem>
+                  <SelectItem value="auto">Auto-created</SelectItem>
+                  <SelectItem value="manual">Manual</SelectItem>
+                </SelectContent>
+              </Select>
+              {filtersActive && (
+                <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setFilters(EMPTY_FILTERS)}><X className="h-3 w-3 mr-1" />Clear</Button>
               )}
             </div>
           </CardHeader>
@@ -347,9 +422,9 @@ export function MeetingDetailClient({ meetingId, canDelete = false }: { meetingI
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[40px]">
-                    <input type="checkbox" aria-label="Select all suggested actions" className="h-4 w-4 accent-[hsl(var(--primary))]"
-                      checked={suggested.length > 0 && selected.size === suggested.length}
-                      onChange={e => setSelected(e.target.checked ? new Set(suggested.map((i: any) => i.id)) : new Set())} />
+                    <input type="checkbox" aria-label="Select all shown suggested actions" title="Select all shown" className="h-4 w-4 accent-[hsl(var(--primary))]"
+                      checked={visibleSuggested.length > 0 && visibleSuggested.every((i: any) => selected.has(i.id))}
+                      onChange={e => setSelected(e.target.checked ? new Set(visibleSuggested.map((i: any) => i.id)) : new Set())} />
                   </TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Assigned</TableHead>
@@ -360,9 +435,9 @@ export function MeetingDetailClient({ meetingId, canDelete = false }: { meetingI
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {suggested.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-6 text-muted-foreground">No suggested actions</TableCell></TableRow>
-                ) : suggested.map((item: any) => (
+                {visibleSuggested.length === 0 ? (
+                  <TableRow><TableCell colSpan={7} className="text-center py-6 text-muted-foreground">{suggested.length === 0 ? 'No suggested actions' : 'No suggested actions match these filters'}</TableCell></TableRow>
+                ) : visibleSuggested.map((item: any) => (
                   <TableRow key={item.id}>
                     <TableCell className="align-top">
                       <input type="checkbox" aria-label="Select action" className="h-4 w-4 mt-1 accent-[hsl(var(--primary))]"
