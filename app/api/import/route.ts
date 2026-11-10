@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     if (fileType === 'unknown') {
       const found = headers.filter(Boolean).slice(0, 12).join(', ')
       return NextResponse.json({
-        error: `Could not tell which BuilderTrend report this is (Jobsites, WIP, Schedule, Lead Opportunities or Invoices). Columns found: ${found || 'none'}`,
+        error: `Could not tell which BuilderTrend report this is (Jobsites, WIP, Schedule, Lead Opportunities, Invoices or Purchase Orders). Columns found: ${found || 'none'}`,
       }, { status: 400 })
     }
 
@@ -57,6 +57,7 @@ export async function POST(request: Request) {
     else if (fileType === 'wip') result = await processWIP(rows)
     else if (fileType === 'schedule') result = await processSchedule(rows)
     else if (fileType === 'invoices') result = await processInvoices(rows)
+    else if (fileType === 'purchase_orders') result = await processPurchaseOrders(rows)
     else result = await processLeads(rows, fileType)
 
     const { added, updated, unchanged, skipped } = result
@@ -372,6 +373,85 @@ async function processInvoices(rows: Record<string, any>[]) {
     }
   }
   if (unlinked) r.warnings.push(`${unlinked} job(s) on these invoices are not in the app yet — import Jobsites so they link to their projects`)
+  return r
+}
+
+// BT "PO Status" text -> group. Work Status "Voided" wins (BT keeps voided POs as Draft).
+function poStatusGroup(poStatus: string, workStatus: string, paid: string): string {
+  if (/^void/i.test(workStatus) || /^void/i.test(paid) || /^void/i.test(poStatus)) return 'voided'
+  const s = poStatus.toLowerCase()
+  if (s.startsWith('approved')) return 'approved'
+  if (s.startsWith('assigned')) return 'internal'
+  if (s.startsWith('sent') || s.startsWith('released') || s.startsWith('pending')) return 'sent'
+  if (s.startsWith('recalled') || s.startsWith('declined') || s.startsWith('rejected')) return 'recalled'
+  if (s.startsWith('draft')) return 'draft'
+  return 'other'
+}
+
+async function processPurchaseOrders(rows: Record<string, any>[]) {
+  // App-side mirror of the BuilderTrend Purchase Orders report. Jobs are only linked, never created or changed.
+  const r = newResult()
+  const jobIdByCode = new Map<string, string | null>()
+  const touched = new Map<string, Set<string>>()
+  let unlinked = 0
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    try {
+      const jobField = str(row['Job'])
+      const poNumber = str(row['PO #']).replace(/\s+/g, ' ')
+      if (!jobField && !poNumber) continue // totals row
+      if (!jobField) { skipRow(r, i + 1, 'blank Job'); continue }
+      if (!poNumber) { skipRow(r, i + 1, 'blank PO #'); continue }
+      const jobCode = resolveJobCode(jobField)
+      if (!jobIdByCode.has(jobCode)) {
+        const job = await prisma.job.findUnique({ where: { jobCode }, select: { id: true } })
+        jobIdByCode.set(jobCode, job?.id ?? null)
+        if (!job) unlinked++
+      }
+      const poStatus = str(row['PO Status']) || 'Unknown'
+      const workStatus = str(row['Work Status'])
+      const paidStatus = str(row['Paid'])
+      const clean = (v: any) => { const s = str(v); return s && s !== '-' ? s : null }
+      const data = {
+        jobId: jobIdByCode.get(jobCode) ?? null,
+        jobName: jobField,
+        title: clean(row['Title']),
+        poStatus,
+        statusGroup: poStatusGroup(poStatus, workStatus, paidStatus),
+        workStatus: workStatus || null,
+        performedBy: clean(row['Performed By']),
+        createdDate: parseExcelDate(row['Created Date']),
+        cost: parseAmount(row['Cost']),
+        paidStatus: paidStatus || null,
+        costCode: clean(row['Cost Code'])?.replace(/\s*\n\s*/g, '; ').replace(/;\s*$/, '') ?? null,
+        varianceCode: clean(row['Variance Code']),
+        estComplete: parseExcelDate(row['Est. Complete']),
+      }
+      const existing = await prisma.purchaseOrder.findUnique({ where: { jobCode_poNumber: { jobCode, poNumber } }, select: { id: true } })
+      if (existing) {
+        await prisma.purchaseOrder.update({ where: { id: existing.id }, data })
+        r.updated++
+      } else {
+        await prisma.purchaseOrder.create({ data: { ...data, jobCode, poNumber } })
+        r.added++
+      }
+      if (!touched.has(jobCode)) touched.set(jobCode, new Set())
+      touched.get(jobCode)!.add(poNumber)
+    } catch (e) {
+      skipRow(r, i + 1, errMsg(e))
+    }
+  }
+
+  // POs deleted in BuilderTrend disappear for the jobs in this file (only when every row imported)
+  if (r.skipped === 0) {
+    for (const [jobCode, nums] of touched) {
+      try {
+        await prisma.purchaseOrder.deleteMany({ where: { jobCode, poNumber: { notIn: [...nums] } } })
+      } catch (e) { console.error('PO cleanup failed:', e) }
+    }
+  }
+  if (unlinked) r.warnings.push(`${unlinked} job(s) on these POs are not in the app yet — import Jobsites so they link to their projects`)
   return r
 }
 

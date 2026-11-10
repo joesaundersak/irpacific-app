@@ -1,7 +1,7 @@
 /* BuilderTrend import file parser */
 import * as XLSX from 'xlsx'
 
-export type FileType = 'jobsites' | 'wip' | 'schedule' | 'leads_expanded' | 'leads_basic' | 'invoices' | 'unknown'
+export type FileType = 'jobsites' | 'wip' | 'schedule' | 'leads_expanded' | 'leads_basic' | 'invoices' | 'purchase_orders' | 'unknown'
 
 // Known header signatures for auto-detect
 const SIGNATURES: Record<FileType, string[]> = {
@@ -11,6 +11,7 @@ const SIGNATURES: Record<FileType, string[]> = {
   leads_expanded: ['Opportunity Title', 'Confidence', 'Estimated Revenue Min', 'Estimated Revenue Max', 'Related Job', 'Salesperson'],
   leads_basic: ['Opportunity Title', 'Confidence', 'Estimated Revenue Min', 'Estimated Revenue Max', 'Salesperson'],
   invoices: ['Job', 'ID#', 'Status', 'Total Price', 'Amount Paid', 'Invoice Balance', 'Deadline', 'Date Paid'],
+  purchase_orders: ['Job', 'PO #', 'Title', 'PO Status', 'Work Status', 'Performed By', 'Created Date', 'Cost', 'Paid', 'Cost Code'],
   unknown: [],
 }
 
@@ -21,6 +22,7 @@ export function detectFileType(headers: string[]): FileType {
   if (has('Opportunity Title') && has('Related Job')) return 'leads_expanded'
   if (has('Job Name') && (has('Client Email') || has('Groups') || has('Contract Price'))) return 'jobsites'
   if (has('Job name') && (has('Projected costs') || has('% complete of job') || has('Revised price'))) return 'wip'
+  if (has('Job', 'PO #') || (has('Job', 'PO Status'))) return 'purchase_orders'
   if (has('Job', 'ID#') && (has('Invoice Balance') || has('Amount Paid'))) return 'invoices'
   if (has('Job', 'Phase') && (has('Duration') || has('Start') || has('Title'))) return 'schedule'
   if (has('Opportunity Title')) return 'leads_basic'

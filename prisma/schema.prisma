@@ -105,6 +105,7 @@ model Job {
   actionItems       ActionItem[]
   leadLinks         Lead[]    @relation("LinkedJob")
   invoices          Invoice[]
+  purchaseOrders    PurchaseOrder[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -332,6 +333,34 @@ model Invoice {
   @@unique([jobCode, invoiceNumber])
   @@index([jobId])
   @@index([status])
+}
+
+// Mirror of the BuilderTrend Purchase Orders report (read-only BT data; replaced on each import)
+model PurchaseOrder {
+  id           String    @id @default(cuid())
+  jobId        String?
+  job          Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  jobCode      String
+  jobName      String
+  poNumber     String
+  title        String?
+  poStatus     String    // raw BT text, e.g. "Approved by Michele Hoff - 7-07-26"
+  statusGroup  String    // draft | sent | approved | internal | recalled | voided | other
+  workStatus   String?
+  performedBy  String?
+  createdDate  DateTime?
+  cost         Float     @default(0)
+  paidStatus   String?
+  costCode     String?
+  varianceCode String?
+  estComplete  DateTime?
+
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([jobCode, poNumber])
+  @@index([jobId])
+  @@index([statusGroup])
 }
 
 model SystemConfig {

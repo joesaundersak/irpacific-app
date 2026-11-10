@@ -103,7 +103,7 @@ export function ReceivablesClient() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Receivables" description={`Customer invoicing and payments from BuilderTrend — read-only${asOf ? ` • Jobsites data as of ${formatDate(asOf)}` : ''}`} />
+      <PageHeader title="Invoices" description={`Customer invoicing and payments from BuilderTrend — read-only${asOf ? ` • Jobsites data as of ${formatDate(asOf)}` : ''}`} />
 
       {error && <Card><CardContent className="p-4 text-sm text-red-600">{error}</CardContent></Card>}
 
@@ -119,7 +119,7 @@ export function ReceivablesClient() {
       <FadeIn delay={0.1}>
         <Card>
           <CardHeader className="space-y-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" />Receivables by Job</CardTitle>
+            <CardTitle className="text-sm font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-primary" />Invoicing by Job</CardTitle>
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Show</Label>

@@ -22,7 +22,7 @@ const BT_EXPORTS: BtExport[] = [
       'Clear any Project Manager, Job Group or date filters.',
     ],
     columns: 'Job Name, Status, Groups (Job Group), Project Manager, Client info, Contract Price, Approved CO Price, Amount Invoiced, Payments Received, Client Balance, Actual Start / Completion.',
-    feeds: 'Jobs, PMs, clients, contract values, Receivables, and Job Group "Product Only" (product sales).',
+    feeds: 'Jobs, PMs, clients, contract values, Invoices page, and Job Group "Product Only" (product sales).',
   },
   {
     name: 'Work in Progress (WIP) Report',
@@ -69,7 +69,19 @@ const BT_EXPORTS: BtExport[] = [
       'No deadline or date filter.',
     ],
     columns: 'Job, ID#, Title, Status, Total Price, Amount Paid, Invoice Balance, Deadline, Date Paid, OwnerName.',
-    feeds: 'Open invoices, due dates and aging (1–30 / 31–60 / 61–90 / 90+ days late) on Receivables.',
+    feeds: 'Open invoices, due dates and aging (1–30 / 31–60 / 61–90 / 90+ days late) on the Invoices page.',
+  },
+  {
+    name: 'Purchase Orders',
+    types: ['purchase_orders'],
+    where: 'Financial → Purchase Orders → List view → Job picker: All Listed Jobs → Export → Excel.',
+    filters: [
+      'Jobs: All Listed Jobs.',
+      'PO Status: All (Draft, Sent, Approved, Assigned Internally, Recalled, Voided) — not just open.',
+      'Work Status and Paid: All. No created-date filter.',
+    ],
+    columns: 'Job, PO #, Title, PO Status, Work Status, Performed By, Created Date, Cost, Paid, Cost Code, Variance Code, Est. Complete.',
+    feeds: 'Purchase Orders page: whether each active job has its POs released and approved (ready to proceed), plus PO $ vs. cost budget.',
   },
 ]
 
@@ -215,7 +227,7 @@ export function ImportsClient() {
                 {uploading ? 'Processing file...' : 'Drag & drop BuilderTrend exports here (one or several)'}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Supports: Jobsites, WIP Report, Schedule, Lead Opportunities, Invoices (.xls, .xlsx)
+                Supports: Jobsites, WIP Report, Schedule, Lead Opportunities, Invoices, Purchase Orders (.xls, .xlsx)
               </p>
               <input
                 type="file"

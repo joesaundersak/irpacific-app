@@ -15,13 +15,14 @@ export async function POST(request: Request) {
     const { confirm } = (await request.json().catch(() => ({}))) ?? {}
     if (confirm !== 'RESET') return NextResponse.json({ error: 'Type RESET to confirm' }, { status: 400 })
 
-    const [actionItems, milestones, apEntries, meetings, , invoices, leads, jobs, imports] = await prisma.$transaction([
+    const [actionItems, milestones, apEntries, meetings, , invoices, purchaseOrders, leads, jobs, imports] = await prisma.$transaction([
       prisma.actionItem.deleteMany({}),
       prisma.milestone.deleteMany({}),
       prisma.aPEntry.deleteMany({}),
       prisma.meeting.deleteMany({}),
       prisma.leadFollowUp.deleteMany({}),
       prisma.invoice.deleteMany({}),
+      prisma.purchaseOrder.deleteMany({}),
       prisma.lead.deleteMany({}),
       prisma.job.deleteMany({}),
       prisma.importHistory.deleteMany({}),
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
       success: true,
       deleted: {
         actionItems: actionItems.count, milestones: milestones.count, apEntries: apEntries.count,
-        meetings: meetings.count, leads: leads.count, jobs: jobs.count, invoices: invoices.count, imports: imports.count,
+        meetings: meetings.count, leads: leads.count, jobs: jobs.count, invoices: invoices.count, purchaseOrders: purchaseOrders.count, imports: imports.count,
       },
     })
   } catch (e) {
