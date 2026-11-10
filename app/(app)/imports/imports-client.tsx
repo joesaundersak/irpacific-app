@@ -10,26 +10,66 @@ import { CollapsibleCard } from '@/components/forecast-filters'
 import { FadeIn } from '@/components/ui/animate'
 import { toast } from 'sonner'
 
-const BT_EXPORTS = [
+type BtExport = { name: string; types: string[]; where: string; filters: string[]; columns: string; feeds: string }
+
+const BT_EXPORTS: BtExport[] = [
   {
-    name: 'Jobsites',
-    where: 'Jobs → Jobs List. Show all jobs (open and closed) with all columns, then Export to Excel.',
-    feeds: 'Job codes, names, PM, client, contract price, status and Job Groups ("Product Only" marks product sales).',
+    name: 'Jobsites (Jobs List)',
+    types: ['jobsites'],
+    where: 'Jobs → Jobs List (list view of all jobs) → Export → Excel.',
+    filters: [
+      'Job Status: All (Open, Closed and Warranty) — not just Open.',
+      'Clear any Project Manager, Job Group or date filters.',
+    ],
+    columns: 'Job Name, Status, Groups (Job Group), Project Manager, Client info, Contract Price, Approved CO Price, Amount Invoiced, Payments Received, Client Balance, Actual Start / Completion.',
+    feeds: 'Jobs, PMs, clients, contract values, Receivables, and Job Group "Product Only" (product sales).',
   },
   {
     name: 'Work in Progress (WIP) Report',
-    where: 'Reports → Work in Progress report for all open jobs, then Export to Excel.',
-    feeds: 'Revised price, projected and actual costs, invoiced amount and % complete (margin, at-risk jobs and the forecast).',
+    types: ['wip'],
+    where: 'Reports → Financial → Work in Progress → Export → Excel.',
+    filters: [
+      'Jobs: all open jobs (no PM or Job Group filter).',
+      'As-of date: today.',
+    ],
+    columns: 'Job name, Revised price, Projected costs, Actual costs, % complete of job, Earned revenue, Over/under billing.',
+    feeds: 'Margins, at-risk jobs, earned revenue (Ready to Bill) and the forecast.',
   },
   {
-    name: 'Schedule – All Listed Jobs',
-    where: 'Schedule → List view with All Listed Jobs selected, then Export to Excel.',
-    feeds: 'Phase dates (Contracting/Pre-Con, Procurement, Installation, Punch List, Completion, PO Due Date, Customer Delivery) and AP items (Phase = AP).',
+    name: 'Schedule — All Listed Jobs',
+    types: ['schedule'],
+    where: 'Schedule → List view → Job picker: All Listed Jobs → Export → Excel.',
+    filters: [
+      'Date range: none / all dates (include past and future items).',
+      'Show completed items: on.',
+      'Phase column must be included (items with Phase "AP" become payables).',
+    ],
+    columns: 'Job, Title, Phase, Start, End, Duration, Complete, Percent Complete, Assigned To.',
+    feeds: 'Phase dates for the forecast and schedule flags, plus the AP Calendar.',
   },
   {
     name: 'Lead Opportunities',
-    where: 'Sales → Lead Opportunities list with all columns shown (including Related Job, Tags, Confidence and estimated revenue), then Export to Excel.',
-    feeds: 'Sales pipeline, confidence %, salesperson, Tags ("Product Only") and weighted leads in the forecast.',
+    types: ['leads_expanded', 'leads_basic'],
+    where: 'Sales → Lead Opportunities → List view → Export → Excel.',
+    filters: [
+      'Status: All (Open, Sold, Lost, On Hold) — not just Open.',
+      'No date or salesperson filter.',
+      'Use the column chooser to show all columns before exporting.',
+    ],
+    columns: 'Opportunity Title, Status, Confidence, Estimated Revenue Min / Max, Salesperson, Related Job, Tags, Projected Sales Date, Last Contacted.',
+    feeds: 'Pipeline, follow-up escalation, Tag "Product Only", and weighted leads in the forecast.',
+  },
+  {
+    name: 'Invoices (Owner Invoices)',
+    types: ['invoices'],
+    where: 'Financial → Invoices (owner/client invoices, All Listed Jobs) → Export → Excel.',
+    filters: [
+      'Jobs: All Listed Jobs.',
+      'Status: All (Draft, Pending/Sent, Partially Paid, Paid) — not just unpaid.',
+      'No deadline or date filter.',
+    ],
+    columns: 'Job, ID#, Title, Status, Total Price, Amount Paid, Invoice Balance, Deadline, Date Paid, OwnerName.',
+    feeds: 'Open invoices, due dates and aging (1–30 / 31–60 / 61–90 / 90+ days late) on Receivables.',
   },
 ]
 
@@ -115,23 +155,39 @@ export function ImportsClient() {
       <PageHeader title="Import Data" description="Upload BuilderTrend export files to sync project and lead data" />
 
       <CollapsibleCard
-        title="What to export from BuilderTrend"
+        title="Required BuilderTrend reports"
         icon={<ListChecks className="h-4 w-4 text-primary" />}
-        storageKey="irp_import_help_open"
-        summary="4 exports: Jobsites, WIP, Schedule, Lead Opportunities"
+        storageKey="irp_import_reports_open"
+        summary={`${BT_EXPORTS.length} exports: ${BT_EXPORTS.map(x => x.name.split(' (')[0].split(' —')[0]).join(', ')}`}
       >
         <p className="text-sm text-muted-foreground mb-4">
-          Export these four reports from BuilderTrend as Excel files (.xls or .xlsx) and drop them all in the box below at once.
-          The app recognizes each file automatically, so file names and order don&apos;t matter. Import all four together so the numbers line up.
+          Export these {BT_EXPORTS.length} reports from BuilderTrend as Excel files (.xls or .xlsx) with the filters below, then drop them all in the box at once.
+          The app recognizes each file automatically, so file names and order don&apos;t matter. Import them together so the numbers line up.
+          If a BuilderTrend menu is named slightly differently in your account, use the closest list view and apply the same filters.
         </p>
-        <ol className="grid gap-3 md:grid-cols-2">
-          {BT_EXPORTS.map((x, i) => (
-            <li key={x.name} className="rounded-lg bg-muted/50 p-4">
-              <p className="text-sm font-semibold"><span className="text-primary">{i + 1}.</span> {x.name}</p>
-              <p className="text-sm mt-1"><span className="font-medium">Where:</span> {x.where}</p>
-              <p className="text-xs text-muted-foreground mt-1"><span className="font-medium">Used for:</span> {x.feeds}</p>
-            </li>
-          ))}
+        <ol className="grid gap-3 lg:grid-cols-2">
+          {BT_EXPORTS.map((x, i) => {
+            const last = history.find((h: any) => x.types.includes(h.fileType))
+            return (
+              <li key={x.name} className="rounded-lg bg-muted/50 p-4 space-y-2">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm font-semibold"><span className="text-primary">{i + 1}.</span> {x.name}</p>
+                  {!loading && (last
+                    ? <Badge variant="outline" className="text-[10px] whitespace-nowrap">Last imported {new Date(last.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</Badge>
+                    : <Badge variant="secondary" className="text-[10px] whitespace-nowrap text-amber-700">Not imported yet</Badge>)}
+                </div>
+                <p className="text-sm"><span className="font-medium">Where:</span> {x.where}</p>
+                <div className="text-sm">
+                  <span className="font-medium">Filters to set:</span>
+                  <ul className="list-disc pl-5 mt-0.5 space-y-0.5">
+                    {x.filters.map(f => <li key={f}>{f}</li>)}
+                  </ul>
+                </div>
+                <p className="text-xs text-muted-foreground"><span className="font-medium">Columns needed:</span> {x.columns}</p>
+                <p className="text-xs text-muted-foreground"><span className="font-medium">Used for:</span> {x.feeds}</p>
+              </li>
+            )
+          })}
         </ol>
         <p className="text-xs text-muted-foreground mt-4">
           Don&apos;t edit the files before uploading. Missing data never blocks an import; it&apos;s flagged as an action item so it can be fixed in BuilderTrend and re-imported.
@@ -159,7 +215,7 @@ export function ImportsClient() {
                 {uploading ? 'Processing file...' : 'Drag & drop BuilderTrend exports here (one or several)'}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Supports: Jobsites, WIP Report, Schedule, Leads (.xls, .xlsx)
+                Supports: Jobsites, WIP Report, Schedule, Lead Opportunities, Invoices (.xls, .xlsx)
               </p>
               <input
                 type="file"

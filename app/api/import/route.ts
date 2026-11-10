@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     if (fileType === 'unknown') {
       const found = headers.filter(Boolean).slice(0, 12).join(', ')
       return NextResponse.json({
-        error: `Could not tell which BuilderTrend report this is (Jobsites, WIP, Schedule or Leads). Columns found: ${found || 'none'}`,
+        error: `Could not tell which BuilderTrend report this is (Jobsites, WIP, Schedule, Lead Opportunities or Invoices). Columns found: ${found || 'none'}`,
       }, { status: 400 })
     }
 
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
     if (fileType === 'jobsites') result = await processJobsites(rows)
     else if (fileType === 'wip') result = await processWIP(rows)
     else if (fileType === 'schedule') result = await processSchedule(rows)
+    else if (fileType === 'invoices') result = await processInvoices(rows)
     else result = await processLeads(rows, fileType)
 
     const { added, updated, unchanged, skipped } = result
@@ -310,6 +311,67 @@ async function processSchedule(rows: Record<string, any>[]) {
     } catch (e) { console.error('Milestone cleanup failed:', e) }
   }
   if (jobsCreated) r.warnings.push(`${jobsCreated} job(s) were not in the app yet and were created from the schedule — import Jobsites to fill in their details`)
+  return r
+}
+
+async function processInvoices(rows: Record<string, any>[]) {
+  // App-side mirror of the BuilderTrend Invoices report. Jobs are only linked, never created or changed.
+  const r = newResult()
+  const jobIdByCode = new Map<string, string | null>()
+  const touched = new Map<string, Set<string>>() // jobCode -> invoice numbers seen in this file
+  let unlinked = 0
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]
+    try {
+      const jobField = str(row['Job'])
+      const invoiceNumber = str(row['ID#']).replace(/\s+/g, ' ')
+      if (!jobField && !invoiceNumber) continue // totals row
+      if (!jobField) { skipRow(r, i + 1, 'blank Job'); continue }
+      if (!invoiceNumber) { skipRow(r, i + 1, 'blank ID#'); continue }
+      const jobCode = resolveJobCode(jobField)
+      if (!jobIdByCode.has(jobCode)) {
+        const job = await prisma.job.findUnique({ where: { jobCode }, select: { id: true } })
+        jobIdByCode.set(jobCode, job?.id ?? null)
+        if (!job) unlinked++
+      }
+      const data = {
+        jobId: jobIdByCode.get(jobCode) ?? null,
+        jobName: jobField,
+        title: str(row['Title']) || null,
+        status: str(row['Status']) || 'Unknown',
+        totalPrice: parseAmount(row['Total Price']),
+        amountPaid: parseAmount(row['Amount Paid']),
+        balance: parseAmount(row['Invoice Balance']),
+        deadline: parseExcelDate(row['Deadline']),
+        datePaid: parseExcelDate(row['Date Paid']),
+        accountingStatus: (str(row['AccountingStatus']) || '').replace(/^-$/, '') || null,
+        ownerName: str(row['OwnerName']) || null,
+      }
+      const existing = await prisma.invoice.findUnique({ where: { jobCode_invoiceNumber: { jobCode, invoiceNumber } }, select: { id: true } })
+      if (existing) {
+        await prisma.invoice.update({ where: { id: existing.id }, data })
+        r.updated++
+      } else {
+        await prisma.invoice.create({ data: { ...data, jobCode, invoiceNumber } })
+        r.added++
+      }
+      if (!touched.has(jobCode)) touched.set(jobCode, new Set())
+      touched.get(jobCode)!.add(invoiceNumber)
+    } catch (e) {
+      skipRow(r, i + 1, errMsg(e))
+    }
+  }
+
+  // Invoices deleted in BuilderTrend disappear for the jobs in this file (only when every row imported)
+  if (r.skipped === 0) {
+    for (const [jobCode, nums] of touched) {
+      try {
+        await prisma.invoice.deleteMany({ where: { jobCode, invoiceNumber: { notIn: [...nums] } } })
+      } catch (e) { console.error('Invoice cleanup failed:', e) }
+    }
+  }
+  if (unlinked) r.warnings.push(`${unlinked} job(s) on these invoices are not in the app yet — import Jobsites so they link to their projects`)
   return r
 }
 

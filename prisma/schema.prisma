@@ -104,6 +104,7 @@ model Job {
   apEntries         APEntry[]
   actionItems       ActionItem[]
   leadLinks         Lead[]    @relation("LinkedJob")
+  invoices          Invoice[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -305,6 +306,32 @@ model ImportHistory {
   @@index([importedById])
   @@index([fileType])
   @@index([createdAt])
+}
+
+// Mirror of the BuilderTrend Invoices report (read-only BT data; replaced on each import)
+model Invoice {
+  id               String    @id @default(cuid())
+  jobId            String?
+  job              Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  jobCode          String
+  jobName          String
+  invoiceNumber    String
+  title            String?
+  status           String
+  totalPrice       Float     @default(0)
+  amountPaid       Float     @default(0)
+  balance          Float     @default(0)
+  deadline         DateTime?
+  datePaid         DateTime?
+  accountingStatus String?
+  ownerName        String?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([jobCode, invoiceNumber])
+  @@index([jobId])
+  @@index([status])
 }
 
 model SystemConfig {

@@ -17,6 +17,7 @@ import {
   Settings,
   ChevronRight,
   ClipboardCheck,
+  Receipt,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -29,6 +30,7 @@ const navItems = [
   { href: '/projects', label: 'Projects', icon: FolderKanban, keys: ['projects'] },
   { href: '/forecast', label: 'Revenue Forecast', icon: BarChart3, keys: ['forecast'] },
   { href: '/ap-calendar', label: 'AP Calendar', icon: Calendar, keys: ['ap'] },
+  { href: '/receivables', label: 'Receivables', icon: Receipt, keys: ['receivables'] },
   { href: '/meetings', label: 'Team Meetings', icon: Users, keys: ['meetings'] },
   { href: '/action-items', label: 'Action Items', icon: ClipboardCheck, keys: ['accountability'] },
   { href: '/imports', label: 'Import Data', icon: Upload, keys: ['imports'] },
